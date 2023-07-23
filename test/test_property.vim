@@ -1,14 +1,15 @@
 vim9script
 
 import 'libtinytest.vim'           as tt
-import '../import/libproperty.vim' as property
+import '../import/libproperty.vim' as libproperty
 
 const AssertFails   = tt.AssertFails
-const Bool          = property.Bool
-const Float         = property.Float
-const Number        = property.Number
-const Observer      = property.Observer
-const String        = property.String
+const Bool          = libproperty.Bool
+const Float         = libproperty.Float
+const Number        = libproperty.Number
+const Observer      = libproperty.Observer
+const String        = libproperty.String
+const Transaction   = libproperty.Transaction
 
 
 class TestObserver implements Observer
@@ -18,6 +19,7 @@ class TestObserver implements Observer
     this.count += 1
   enddef
 endclass
+
 
 def Test_PR_Bool()
   var o = TestObserver.new()
@@ -165,5 +167,39 @@ def Test_PR_String()
   }, 'E1012')
 enddef
 
+
+def Test_PR_Transaction()
+  var o1 = TestObserver.new()
+  var o2 = TestObserver.new()
+
+  var p1 = Number.new(1, o1, o2)
+  var p2 = Number.new(10, o1, o2)
+
+  Transaction(() => {
+    p1.Set(2)
+    p2.Set(20)
+  })
+
+  assert_equal(1, o1.count)
+  assert_equal(1, o2.count)
+enddef
+
+def Test_PR_NestedTransactions()
+  var o1 = TestObserver.new()
+  var o2 = TestObserver.new()
+  var p1 = Number.new(1, o1)
+  var p2 = Number.new(10, o1, o2)
+
+  Transaction(() => {
+    p1.Set(2)
+    p2.Set(20)
+    Transaction(() => {
+      p2.Set(30)
+      })
+    })
+
+  assert_equal(1, o1.count)
+  assert_equal(1, o2.count)
+enddef
 
 tt.Run('_PR_')

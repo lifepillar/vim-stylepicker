@@ -1,7 +1,7 @@
 vim9script
 
-def NotIn(v: any, items: any): bool
-  return index(items, v) == -1
+def IsNotIn(v: any, items: any): bool
+  return indexof(items, (_, u) => u is v) == -1
 enddef
 
 
@@ -72,7 +72,7 @@ export class Observable
 
   def Notify()
     for obs in this._observer
-      if obs->NotIn(gQueue)
+      if obs->IsNotIn(gQueue)
         gQueue->add(obs)
       endif
     endfor
