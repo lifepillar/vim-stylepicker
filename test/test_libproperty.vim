@@ -187,16 +187,18 @@ enddef
 def Test_PR_NestedTransactions()
   var o1 = TestObserver.new()
   var o2 = TestObserver.new()
-  var p1 = Number.new(1, o1)
+  var p1 = Number.new(1, o1, o2)
   var p2 = Number.new(10, o1, o2)
+  var p3 = Number.new(100, o1, o2)
 
   Transaction(() => {
-    p1.Set(2)
-    p2.Set(20)
     Transaction(() => {
-      p2.Set(30)
-      })
+      p1.Set(2)
+      p2.Set(20)
     })
+    p2.Set(30)
+    p3.Set(300)
+  })
 
   assert_equal(1, o1.count)
   assert_equal(1, o2.count)

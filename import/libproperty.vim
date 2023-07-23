@@ -15,29 +15,39 @@ endinterface
 # By default, when a property changes, it notifies its observers at once. It
 # is possible, however, to perform several changes to one or more properties
 # within a transaction, in which case notifications are sent only when the
-# transaction commits. The gTransaction flag signals whether a transaction is
-# running. The queue is where the observers to be notified are pushed. The
-# queue is emptied when the transaction commits (see Commit()).
-var gTransaction: bool           = false
+# transaction commits. The gTransaction counter signals whether a (nested)
+# transaction is running. The queue is where the observers to be notified are
+# pushed. The queue is emptied when the transaction commits (see Commit()).
+var gTransaction: number         = 0
 var gQueue:       list<Observer> = []
 
 
 def Begin()
-  gTransaction = true
+  gTransaction += 1
 enddef
 
+def InsideTransaction(): bool
+  return gTransaction > 0
+enddef
+
+def InsideNestedTransaction(): bool
+  return gTransaction > 1
+enddef
 
 def Commit()
-  if !gTransaction
+  if !InsideTransaction()
     Begin() # Implicit transaction
   endif
 
-  for obs in gQueue
-    obs.Update()
-  endfor
+  if !InsideNestedTransaction()
+    for obs in gQueue
+      obs.Update()
+    endfor
 
-  gTransaction = false
-  gQueue       = []
+    gQueue = []
+  endif
+
+  gTransaction -= 1
 enddef
 
 
@@ -77,7 +87,7 @@ export class Observable
       endif
     endfor
 
-    if !gTransaction
+    if !InsideTransaction()
       Commit()
     endif
   enddef
