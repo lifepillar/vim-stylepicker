@@ -1,7 +1,7 @@
 vim9script
 
-import          'libtinytest.vim'    as tt
-import autoload 'property.vim'       as property
+import 'libtinytest.vim'           as tt
+import '../import/libproperty.vim' as property
 
 const AssertFails   = tt.AssertFails
 const Bool          = property.Bool
