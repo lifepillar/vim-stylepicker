@@ -4,16 +4,16 @@ import 'libtinytest.vim'           as tt
 import '../import/libproperty.vim' as libproperty
 
 const AssertFails   = tt.AssertFails
-const Bool          = libproperty.Bool
-const Float         = libproperty.Float
-const Number        = libproperty.Number
-const Observer      = libproperty.Observer
-const String        = libproperty.String
+type  Bool          = libproperty.Bool
+type  Float         = libproperty.Float
+type  Number        = libproperty.Number
+type  Observer      = libproperty.Observer
+type  String        = libproperty.String
 const Transaction   = libproperty.Transaction
 
 
 class TestObserver implements Observer
-  public this.count = 0
+  public var count = 0
 
   def Update()
     this.count += 1
