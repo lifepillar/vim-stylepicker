@@ -4,22 +4,22 @@ import 'libtinytest.vim'           as tt
 import '../autoload/model.vim'     as model
 import '../import/libproperty.vim' as property
 
-const Color        = model.Color
-const HiGroup      = model.HiGroup
-const HiGroupColor = model.HiGroupColor
-const HiGroupStyle = model.HiGroupStyle
+type  Color        = model.Color
+type  HiGroup      = model.HiGroup
+type  HiGroupColor = model.HiGroupColor
+type  HiGroupStyle = model.HiGroupStyle
 const HlClear      = model.HlClear
 const HlGet        = model.HlGet
 const HlGetColor   = model.HlGetColor
 const HlGetStyle   = model.HlGetStyle
 const HlSetColor   = model.HlSetColor
 const HlSetStyle   = model.HlSetStyle
-const Observer     = property.Observer
 const Transaction  = property.Transaction
+type  Observer     = property.Observer
 
 # Helper classes and functions {{{
 class TestObserver implements Observer
-  public this.count = 0
+  public var count = 0
 
   def Update()
     this.count += 1

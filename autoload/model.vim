@@ -4,11 +4,12 @@ import 'libcolor.vim'              as libcolor
 import '../import/libproperty.vim' as libproperty
 import autoload './util.vim'       as util
 
-const Number      = libproperty.Number
-const Observable  = libproperty.Observable
-const Observer    = libproperty.Observer
-const Property    = libproperty.Property
+type  Number      = libproperty.Number
+type  Observable  = libproperty.Observable
+type  Observer    = libproperty.Observer
+type  Property    = libproperty.Property
 const Transaction = libproperty.Transaction
+
 const Attr        = util.Attr
 const ColorMode   = util.ColorMode
 const StyleMode   = util.StyleMode
@@ -116,9 +117,9 @@ enddef
 # }}}
 
 export class Color extends Observable implements Property, Observer
-  this.red:           Number
-  this.green:         Number
-  this.blue:          Number
+  var red:           Number
+  var green:         Number
+  var blue:          Number
 
   def new(hexValue: string, ...observers: list<Observer>)
     const [red, green, blue] = libcolor.Hex2Rgb(hexValue)
@@ -153,9 +154,9 @@ export class Color extends Observable implements Property, Observer
 endclass
 
 export class HiGroupColor extends Observable implements Property, Observer
-  this.hiGroup:  string
-  this.attr:  string # 'fg', 'bg', 'sp'
-  this.value: Color
+  var hiGroup:  string
+  var attr:  string # 'fg', 'bg', 'sp'
+  var value: Color
 
   def new(this.hiGroup, this.attr, ...observers: list<Observer>)
     const c = HlGetColor(this.hiGroup, this.attr)
@@ -179,8 +180,8 @@ endclass
 
 
 export class HiGroupStyle extends Observable implements Property
-  this.hiGroup: string
-  this._value: dict<bool>
+  var hiGroup: string
+  var _value: dict<bool>
 
   def new(this.hiGroup, ...observers: list<Observer>)
     this._value = HlGetStyle(this.hiGroup)
@@ -235,11 +236,10 @@ export class HiGroupStyle extends Observable implements Property
   enddef
 endclass
 
-
 export class HiGroup extends Observable implements Property, Observer
-  this.name:    string
-  this.color:   dict<HiGroupColor>
-  this.style:   HiGroupStyle
+  var name:    string
+  var color:   dict<HiGroupColor>
+  var style:   HiGroupStyle
 
   def new(this.name, ...observers: list<Observer>)
     this.color = {

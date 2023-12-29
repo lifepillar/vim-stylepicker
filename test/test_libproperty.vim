@@ -20,7 +20,6 @@ class TestObserver implements Observer
   enddef
 endclass
 
-
 def Test_PR_Bool()
   var o = TestObserver.new()
   var v = Bool.new(true) # No observer
@@ -50,9 +49,13 @@ def Test_PR_Bool()
 
   assert_equal(2, o.count)
 
-  AssertFails(() => {
-    Bool.new('abc')
-  }, 'E1012') # Type mismatch
+  def NewBool(value: any)
+    AssertFails(() => {
+      Bool.new(value)
+    }, 'E1013')
+  enddef
+
+  NewBool('abc')
 enddef
 
 def Test_PR_Float()
@@ -87,9 +90,13 @@ def Test_PR_Float()
   assert_equal(1.2, v.Get())
   assert_equal(2, o.count)
 
-  AssertFails(() => {
-    Float.new({})
-  }, 'E1012')
+  def NewFloat(value: any)
+    AssertFails(() => {
+      Float.new(value)
+    }, 'E1013')
+  enddef
+
+  NewFloat({})
 enddef
 
 def Test_PR_Number()
@@ -125,9 +132,13 @@ def Test_PR_Number()
   assert_equal(2, o.count)
 
 
-  AssertFails(() => {
-    Number.new('abc')
-  }, 'E1012') # Type mismatch
+  def NewNumber(value: any)
+    AssertFails(() => {
+      Number.new(value)
+    }, 'E1013')
+  enddef
+
+  NewNumber('abc')
 enddef
 
 def Test_PR_String()
@@ -162,9 +173,13 @@ def Test_PR_String()
   assert_equal('nowhere', v.Get())
   assert_equal(2, o.count)
 
-  AssertFails(() => {
-    String.new(42)
-  }, 'E1012')
+  def NewString(value: any)
+    AssertFails(() => {
+      String.new(value)
+    }, 'E1013')
+  enddef
+
+  NewString(42)
 enddef
 
 

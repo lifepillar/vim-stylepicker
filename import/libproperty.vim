@@ -67,7 +67,7 @@ enddef
 # explcitly) call Register() on an observable property to declare their
 # interest in the property's updates.
 export class Observable
-  this._observer: list<Observer>
+  var _observer: list<Observer>
 
   def Register(...observers: list<Observer>)
     # See https://github.com/vim/vim/issues/12081
@@ -108,7 +108,7 @@ endinterface
 
 
 export class Bool extends Observable implements Property
-  this._value: bool
+  var _value: bool
 
   def new(this._value, ...observers: list<Observer>)
     this.DoRegister(observers)
@@ -128,7 +128,7 @@ endclass
 
 
 export class Float extends Observable implements Property
-  this._value: float
+  var _value: float
 
   def new(this._value, ...observers: list<Observer>)
     this.DoRegister(observers)
@@ -148,7 +148,7 @@ endclass
 
 
 export class Number extends Observable implements Property
-  this._value: number
+  var _value: number
 
   def new(this._value, ...observers: list<Observer>)
     this.DoRegister(observers)
@@ -168,7 +168,7 @@ endclass
 
 
 export class String extends Observable implements Property
-  this._value: string
+  var _value: string
 
   def new(this._value, ...observers: list<Observer>)
     this.DoRegister(observers)

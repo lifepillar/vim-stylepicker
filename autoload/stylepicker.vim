@@ -32,16 +32,16 @@ def Filter(winId: number, key: string): number
 enddef
 
 class StylePicker
-  this.hiGroup: string = null_string
-  this.x               = 0
-  this.y               = 0
-  this.mode        = (has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm')
-  this.attrMode    = (has('gui_running') ? 'gui' : (exists('&t_Co') && str2nr(&t_Co) > 2 ? 'cterm' : 'term'))
-  this.markSym     = get(g:, 'stylepicker_marker', '❯❯ ')
-  this.starSym     = get(g:, 'stylepicker_star', '*')
-  this.winId: number
-  this.width: number
-  this.gutterWidth: number
+  var hiGroup: string = null_string
+  var x               = 0
+  var y               = 0
+  var mode        = (has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm')
+  var attrMode    = (has('gui_running') ? 'gui' : (exists('&t_Co') && str2nr(&t_Co) > 2 ? 'cterm' : 'term'))
+  var markSym     = get(g:, 'stylepicker_marker', '❯❯ ')
+  var starSym     = get(g:, 'stylepicker_star', '*')
+  var winId: number
+  var width: number
+  var gutterWidth: number
 
   def new(this.hiGroup = v:none, this.x = v:none, this.y = v:none)
     this.width = max([39 + strdisplaywidth(this.markSym), 42])
