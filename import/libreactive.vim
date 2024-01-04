@@ -41,10 +41,6 @@ export class Signal
   enddef
 
   def Write(newValue: any)
-    if newValue == this._value
-      return
-    endif
-
     this._value = newValue
 
     # A copy must be made because this.effects is altered by executing effects
