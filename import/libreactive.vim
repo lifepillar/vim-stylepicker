@@ -52,6 +52,10 @@ export class Signal
       effect.Execute()
     endfor
   enddef
+
+  def GetterSetter(): list<func>
+    return [this.Read, this.Write]
+  enddef
 endclass
 
 def AsSignal(s: Signal): Signal
@@ -94,6 +98,5 @@ export def CreateMemo(Fn: func(): any): func(): any
 enddef
 
 export def Property(value: any = null): list<func>
-  var signal = Signal.new(value)
-  return [signal.Read, signal.Write]
+  return Signal.new(value).GetterSetter()
 enddef
