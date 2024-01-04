@@ -28,7 +28,7 @@ endclass
 
 var gActiveEffect: Effect = null_object
 
-class Signal
+export class Signal
   var _value: any = null
   var effects: list<Effect> = []
 
