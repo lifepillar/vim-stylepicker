@@ -203,5 +203,52 @@ def Test_React_FineGrainedReaction()
   assert_equal(4, run)
 enddef
 
+def Test_React_EffectCascade()
+  const [A, SetA] = react.Property(2)
+  const [B, SetB] = react.Property(1)
+  var result = -1
+
+  react.CreateEffect(() => {
+    result = B()
+  })
+
+  assert_equal(1, result)
+
+  react.CreateEffect(() => {
+    const a = A()
+    SetB(a)
+  })
+
+  assert_equal(2, result)
+enddef
+
+def Test_React_EffectCascadeInverted()
+  const [A, SetA] = react.Property(2)
+  const [B, SetB] = react.Property(1)
+  var result = -1
+
+  assert_equal(2, A())
+  assert_equal(1, B())
+
+  react.CreateEffect(() => {
+    const a = A()
+    SetB(a)
+  })
+
+  assert_equal(2, A())
+  assert_equal(A(), B())
+  assert_equal(-1, result)
+
+  react.CreateEffect(() => {
+    result = B()
+  })
+
+  assert_equal(2, result)
+
+  SetA(3)
+
+  assert_equal(3, result)
+enddef
+
 
 tt.Run('_React_')
