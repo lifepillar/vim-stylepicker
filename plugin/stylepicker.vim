@@ -1,6 +1,3 @@
-if !has('vim9script')
-  finish
-endif
 vim9script
 
 # Name:        StylePicker
@@ -12,5 +9,6 @@ if !(has('popupwin') && has('textprop'))
   finish
 endif
 
-import '../autoload/stylepicker.vim' as sp
-command! -nargs=? -bar -complete=highlight StylePicker sp.Open(<q-args>)
+import autoload '../autoload/stylepicker.vim' as stylepicker
+
+command! -nargs=? -bar -complete=highlight StylePicker stylepicker.Open(<q-args>)
