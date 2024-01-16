@@ -4,13 +4,6 @@ vim9script
 # https://dev.to/ryansolid/building-a-reactive-library-from-scratch-1i0p
 #
 # Note that nested effects are not supported.
-# Note that the library does not protect against infinite recursion. For
-# example:
-#
-#   const [Value, SetValue] = Property(0)
-#   CreateEffect(() => {
-#     SetValue(Value() + 1)
-#   })
 
 # Helper functions {{{
 def NotIn(v: any, items: list<any>): bool
@@ -56,7 +49,9 @@ export class Signal
     const currentEffects: list<Effect> = copy(this.effects)
 
     for effect in currentEffects
-      effect.Execute()
+      if effect isnot gActiveEffect  # Prevent an effect to trigger itself
+        effect.Execute()
+      endif
     endfor
   enddef
 

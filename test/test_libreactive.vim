@@ -250,5 +250,36 @@ def Test_React_EffectCascadeInverted()
   assert_equal(3, result)
 enddef
 
+def Test_React_EffectCannotTriggerItself()
+  const [Value, SetValue] = react.Property(4)
+
+  # The effect is bound to the signal because the effect's function reads the
+  # signal. But the effect is not recursively triggered when the signal is
+  # updated, preventing infinite recursion.
+  react.CreateEffect(() => {
+    SetValue(Value() * 3)
+  })
+
+  assert_equal(12, Value())
+enddef
+
+
+def Test_React_MutualRecursionIsNotSupported()
+  const [V1, SetV1] = react.Property(3)
+  const [V2, SetV2] = react.Property(5)
+
+  tt.AssertFails(() => {
+    react.CreateEffect(() => {
+      SetV2(V1() + 1)
+    })
+
+    assert_equal(4, V2())
+
+    react.CreateEffect(() => {
+      SetV1(V2() - 2)
+    })
+  }, "Function call depth is higher than 'maxfuncdepth'")
+enddef
+
 
 tt.Run('_React_')
