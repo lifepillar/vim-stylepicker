@@ -1,8 +1,8 @@
 vim9script
 
-if !has('popupwin') || !has('textprop')
+if !has('popupwin') || !has('textprop') || v:version < 901
   export def Open(hiGroup: string = null_string)
-    echomsg 'Stylepicker requires Vim compiled with popupwin and textprop'
+    echomsg 'Stylepicker requires Vim 9.1 compiled with popupwin and textprop'
   enddef
   finish
 endif
