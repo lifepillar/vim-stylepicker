@@ -219,6 +219,8 @@ def Test_React_EffectCascade()
     SetB(a)
   })
 
+  assert_equal(2, A())
+  assert_equal(2, B())
   assert_equal(2, result)
 enddef
 
@@ -247,6 +249,8 @@ def Test_React_EffectCascadeInverted()
 
   SetA(3)
 
+  assert_equal(3, A())
+  assert_equal(3, B())
   assert_equal(3, result)
 enddef
 
@@ -326,7 +330,7 @@ def Test_React_VStack()
   var result: list<string> = []
   var n = 0
 
-  react.CreateEffect(() => { # Tracks the two memo signals, *not* V1, V2, or V3 directly
+  react.CreateEffect(() => { # Tracks the two memo signals, *not* V1, V2 directly
     ++n
     result = MainView()
   })
@@ -336,11 +340,102 @@ def Test_React_VStack()
 
   SetV1('x')
   assert_equal(['x', 'b', 'b', 'x'], result)
-  assert_equal(3, n)
+  assert_equal(2, n)
 
   SetV2('y')
   assert_equal(['x', 'y', 'y', 'x'], result)
-  assert_equal(5, n)
+  assert_equal(3, n)
+enddef
+
+def Test_React_EffectSimpleOrdering()
+  const [V1, SetV1] = react.Property(0)
+  var result = ''
+
+  react.CreateEffect(() => {
+    V1()
+    result ..= 'A'
+  })
+  react.CreateEffect(() => {
+    V1()
+    result ..= 'B'
+  })
+  react.CreateEffect(() => {
+    V1()
+    result ..= 'C'
+  })
+
+  assert_equal('ABC', result)
+
+  SetV1(1) # Effects are run in the order they were created
+
+  assert_equal('ABCABC', result)
+enddef
+
+def Test_React_EffectOrdering()
+  # Effects are executed as atomic units: this makes it easier to reason about
+  # the code. The example below executes as if effects were run in the order
+  # (1), (2), (3), (2). No interleaving among effects is possible.
+  const [V1, SetV1] = react.Property(1)
+  const [V2, SetV2] = react.Property(2)
+  var result = ''
+  var n = 0
+
+  assert_equal(1, V1())
+  assert_equal(2, V2())
+
+  # (1)
+  react.CreateEffect(() => {
+    ++n
+    SetV2(V1())
+    result ..= 'A'
+  })
+
+  assert_equal(1, n)
+  assert_equal(1, V1())
+  assert_equal(1, V2())
+  assert_equal('A', result)
+
+  # (2)
+  react.CreateEffect(() => {
+    ++n
+    V2()
+    result ..= 'B'
+  })
+
+  assert_equal(2, n)
+  assert_equal(1, V1())
+  assert_equal(1, V2())
+  assert_equal('AB', result)
+
+  # (3)
+  react.CreateEffect(() => {
+    ++n
+    # When updating a value inside an effect, its effects should be updated
+    # only once and only after this effect has run completely
+    SetV2(V1() + 1)
+    SetV2(-100)
+    SetV2(V1() + 2)
+    result ..= 'C'
+  })
+
+  assert_equal(4, n)
+  assert_equal(1, V1())
+  assert_equal(3, V2())
+  assert_equal('ABCB', result)
+
+  # Effects are run in the order they are created. The following update will
+  # notify (1) then (3). Since they both update V2, also (2) is called (once)
+  # after (1) and (3) have run to completion.
+  # Note that the notifications are spawned in a breadth-first way: even if
+  # (1) updates V2, the observers of V2 are notified only after (3) has run.
+  # (A depth-first propagation would result in the sequence (1) (2) (3) (2),
+  # with (2) executed twice).
+  SetV1(5)
+
+  assert_equal(7, n)
+  assert_equal(5, V1())
+  assert_equal(7, V2())
+  assert_equal('ABCBACB', result)
 enddef
 
 tt.Run('_React_')

@@ -33,7 +33,9 @@ class Effect
     var prevActive = Effect.active
     Effect.active = this
     this.ClearDependencies()
+    Begin()
     this.Fn()
+    Commit()
     Effect.active = prevActive
   enddef
 
@@ -67,12 +69,15 @@ class EffectQueue
   enddef
 
   def Push(effect: Effect)
+    if effect->NotIn(this._q[this._start : ])
+      this._q->add(effect)
+    endif
+
+    # FIXME
     if this._start > 0 && effect->In(this._q[ : this._start - 1])
       const effects: list<string> = mapnew(this._q, (_, e: Effect): string => e.AsString())
       throw printf('Recursive effects detected when adding %s: %s', effect.AsString(), effects)
     endif
-
-    this._q->add(effect)
   enddef
 
   def Pop(): Effect
