@@ -1,11 +1,15 @@
 vim9script
 
-# A minimal reactive library. Loosely inspired by SolidJS, in particular by this tutorial:
+# A minimal reactive library. Loosely inspired by this tutorial:
 # https://dev.to/ryansolid/building-a-reactive-library-from-scratch-1i0p
 
 # Helper functions {{{
 def NotIn(v: any, items: list<any>): bool
   return indexof(items, (_, u) => u is v) == -1
+enddef
+
+def In(v: any, items: list<any>): bool
+  return indexof(items, (_, u) => u is v) != -1
 enddef
 
 def RemoveFrom(v: any, items: list<any>)
@@ -20,8 +24,34 @@ enddef
 # }}}
 
 class Effect
-  var Execute: func()
-  public var dependentSignals: list<any> = []  # List of signals that trigger the effect
+  var Fn: func()
+  var _dependentSignals: list<any> = []  # List of signals that trigger the effect
+
+  public static var active: any = null_object
+
+  def Execute()
+    var prevActive = Effect.active
+    Effect.active = this
+    this.ClearDependencies()
+    this.Fn()
+    Effect.active = prevActive
+  enddef
+
+  def ClearDependencies()
+    for signal in this._dependentSignals
+      AsSignal(signal).RemoveEffect(this)
+    endfor
+
+    this._dependentSignals = []
+  enddef
+
+  def AddSignal(signal: any)
+    this._dependentSignals->add(signal)
+  enddef
+
+  def AsString(): string
+    return printf('Effect: %s', this.Fn)
+  enddef
 endclass
 
 class EffectQueue
@@ -36,12 +66,13 @@ class EffectQueue
     return this._start == len(this._q)
   enddef
 
-  def Push(e: Effect)
-    if e->NotIn(this._q)
-      this._q->add(e)
-      return
+  def Push(effect: Effect)
+    if this._start > 0 && effect->In(this._q[ : this._start - 1])
+      const effects: list<string> = mapnew(this._q, (_, e: Effect): string => e.AsString())
+      throw printf('Recursive effects detected when adding %s: %s', effect.AsString(), effects)
     endif
-    throw 'Recursive effects detected.'
+
+    this._q->add(effect)
   enddef
 
   def Pop(): Effect
@@ -55,8 +86,6 @@ class EffectQueue
   enddef
 endclass
 
-var gActiveEffect: Effect = null_object
-
 # Transaction {{{
 # By default, when a signal is updated, its effects are triggered
 # synchronously. It is possible, however, to perform several changes to one or
@@ -65,7 +94,7 @@ var gActiveEffect: Effect = null_object
 # a (nested) transaction is running. The queue is where the effects to be
 # executed are pushed. The queue is emptied when the transaction commits (see
 # Commit()).
-var gTransaction: number = 0
+var gTransaction = 0 # 0 = not in a transaction, ≥1 = inside transaction, >1 = in nested transaction
 var gQueue = EffectQueue.new()
 
 def Begin()
@@ -97,11 +126,11 @@ enddef
 
 export class Signal
   var _value: any = null
-  var effects: list<Effect> = []
+  var _effects: list<Effect> = []
 
   def Read(): any
-    if gActiveEffect != null # Set the effect to track changes to this signal
-      Bind(this, gActiveEffect)
+    if Effect.active != null # Set the effect to track changes to this signal
+      this.AddEffect(Effect.active)
     endif
 
     return this._value
@@ -111,14 +140,29 @@ export class Signal
     this._value = newValue
 
     Transaction(() => {
-      for effect in this.effects
+      for effect in this._effects
         gQueue.Push(effect)
       endfor
     })
   enddef
 
+  def AddEffect(effect: Effect)
+    if effect->NotIn(this._effects)
+      this._effects->add(effect)
+      effect.AddSignal(this)
+    endif
+  enddef
+
+  def RemoveEffect(effect: Effect)
+    effect->RemoveFrom(this._effects)
+  enddef
+
   def GetterSetter(): list<func>
     return [this.Read, this.Write]
+  enddef
+
+  def AsString(): string
+    return string(this._value)
   enddef
 endclass
 
@@ -126,47 +170,24 @@ def AsSignal(s: Signal): Signal
   return s
 enddef
 
-def ClearDependencies(effect: Effect)
-  for signal in effect.dependentSignals
-    effect->RemoveFrom(AsSignal(signal).effects)
-  endfor
-
-  effect.dependentSignals = []
-enddef
-
-def Bind(signal: Signal, effect: Effect)
-  if effect->NotIn(signal.effects)
-    signal.effects->add(effect)
-    effect.dependentSignals->add(signal)
-  endif
-enddef
-
 var gInsideCreateEffect = false
 
 export def CreateEffect(Fn: func())
   if gInsideCreateEffect
-    throw 'Nested effects detected'
+    throw 'Nested CreateEffect() calls detected'
   endif
 
   gInsideCreateEffect = true
 
-  var runningEffect: Effect
+  var runningEffect = Effect.new(Fn)
 
-  const Execute = () => {
-    ClearDependencies(runningEffect)
-    gActiveEffect = runningEffect
-    Fn()
-    gActiveEffect = null_object
-  }
-
-  runningEffect = Effect.new(Execute)
-  Execute() # Necessary to bind to dependent signals
+  runningEffect.Execute() # Necessary to bind to dependent signals
 
   gInsideCreateEffect = false
 enddef
 
 export def CreateMemo(Fn: func(): any): func(): any
-  const signal = Signal.new()
+  var signal = Signal.new()
   CreateEffect(() => signal.Write(Fn()))
   return signal.Read
 enddef
@@ -178,6 +199,6 @@ enddef
 export def Reinit()
   gQueue.Reset()
   gTransaction = 0
-  gActiveEffect = null_object
+  Effect.active = null_object
   gInsideCreateEffect = false
 enddef

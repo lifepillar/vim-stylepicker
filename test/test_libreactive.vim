@@ -290,7 +290,57 @@ def Test_React_NestedCreateEffectIsAnError()
       react.CreateEffect(() => {
         })
     })
-  }, 'Nested effects')
+  }, 'Nested CreateEffect()')
+enddef
+
+type View = func(): list<string>
+type Reader = func(): any
+
+def Test_React_VStack()
+  const [V1, SetV1] = react.Property('a')
+  const [V2, SetV2] = react.Property('b')
+  const [V3, SetV3] = react.Property('b')
+  const View1 = (): list<string> => [V1(), V2()]
+  const View2 = (): list<string> => [V2(), V1()]
+
+  def VStack(...views: list<View>): View
+    var stacked: list<Reader>
+
+    for V in views
+      const VRead: Reader = react.CreateMemo(V) # Creates an effect that tracks V's signals
+      stacked->add(VRead)
+    endfor
+
+    return (): list<string> => {
+      var text: list<string> = []
+
+      for R in stacked
+        text->extend(R())
+      endfor
+
+      return text
+    }
+  enddef
+
+  const MainView = VStack(View1, View2)
+  var result: list<string> = []
+  var n = 0
+
+  react.CreateEffect(() => { # Tracks the two memo signals, *not* V1, V2, or V3 directly
+    ++n
+    result = MainView()
+  })
+
+  assert_equal(1, n)
+  assert_equal(['a', 'b', 'b', 'a'], result)
+
+  SetV1('x')
+  assert_equal(['x', 'b', 'b', 'x'], result)
+  assert_equal(3, n)
+
+  SetV2('y')
+  assert_equal(['x', 'y', 'y', 'x'], result)
+  assert_equal(5, n)
 enddef
 
 tt.Run('_React_')
