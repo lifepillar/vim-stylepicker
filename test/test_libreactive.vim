@@ -284,10 +284,6 @@ def Test_React_RecursiveEffectsAreDetected()
   }, 'Recursive effects')
 enddef
 
-tt.Setup = () => {
-  react.Reinit() # Make sure each test starts with a clean slate
-}
-
 def Test_React_NestedCreateEffectIsAnError()
   tt.AssertFails(() => {
     react.CreateEffect(() => {
@@ -437,5 +433,79 @@ def Test_React_EffectOrdering()
   assert_equal(7, V2())
   assert_equal('ABCBACB', result)
 enddef
+
+def Test_React_NotRecursive()
+  const [V1, SetV1] = react.Property(1)
+  const [V2, SetV2] = react.Property(2)
+  var sequence = ''
+
+  react.CreateEffect(() => { # Observes V1
+    sequence ..= 'A'
+    V1()
+  })
+
+  assert_equal('A', sequence)
+
+  react.CreateEffect(() => { # Observes V2
+    sequence ..= 'B'
+    SetV1(V2())
+  })
+
+  assert_equal(2, V1())
+  assert_equal(2, V2())
+  assert_equal('ABA', sequence)
+
+  react.CreateEffect(() => { # Observes V2
+    sequence ..= 'C'
+    SetV1(9)
+    SetV2(7)
+  })
+
+  assert_equal(7, V1())
+  assert_equal(7, V2())
+  assert_equal('ABACABA', sequence)
+enddef
+
+def Test_React_NotRecursiveTransaction()
+  const [V1, SetV1] = react.Property(1)
+  const [V2, SetV2] = react.Property(2)
+  var sequence = ''
+
+  react.Transaction(() => {
+    react.CreateEffect(() => {
+      sequence ..= 'A'
+      V1()
+    })
+
+    assert_equal('A', sequence)
+
+    react.CreateEffect(() => {
+      sequence ..= 'B'
+      SetV1(V2())
+    })
+
+    assert_equal(2, V1())
+    assert_equal(2, V2())
+    assert_equal('AB', sequence)
+
+    react.CreateEffect(() => {
+      sequence ..= 'C'
+      SetV1(9)
+      SetV2(7)
+    })
+
+    assert_equal(9, V1())
+    assert_equal(7, V2())
+    assert_equal('ABC', sequence)
+  })
+
+  assert_equal(7, V1())
+  assert_equal(7, V2())
+  assert_equal('ABCABA', sequence)
+enddef
+
+tt.Setup = () => {
+  react.Reinit() # Make sure each test starts with a clean slate
+}
 
 tt.Run('_React_')
