@@ -18,7 +18,6 @@ def Test_React_SimplePropertyAccess()
   assert_equal(DoubleCount(), 10)
 enddef
 
-
 def Test_React_SimpleEffect()
   const [Count, SetCount] = react.Property(1)
   var result = 0
@@ -264,7 +263,7 @@ def Test_React_SelfRecursionIsDetected()
     react.CreateEffect(() => {
       SetV1(V1() * 3)
     })
-  }, 'Recursive effects')
+  }, 'recursive effects')
 enddef
 
 def Test_React_RecursiveEffectsAreDetected()
@@ -281,7 +280,7 @@ def Test_React_RecursiveEffectsAreDetected()
     react.CreateEffect(() => {
       SetV2(V3() - 2)
     })
-  }, 'Recursive effects')
+  }, 'recursive effects')
 enddef
 
 def Test_React_NestedCreateEffectIsAnError()

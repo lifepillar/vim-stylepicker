@@ -60,6 +60,8 @@ class EffectQueue
   var _q: list<Effect> = []
   var _start: number = 0
 
+  static var max_size = 10000 # TODO: make a setting
+
   def Items(): list<Effect>
     return this._q[this._start : ]
   enddef
@@ -73,10 +75,8 @@ class EffectQueue
       this._q->add(effect)
     endif
 
-    # FIXME
-    if this._start > 0 && effect->In(this._q[ : this._start - 1])
-      const effects: list<string> = mapnew(this._q, (_, e: Effect): string => e.AsString())
-      throw printf('Recursive effects detected when adding %s: %s', effect.AsString(), effects)
+    if len(this._q) > EffectQueue.max_size
+      throw $'[Reactive] Potentially recursive effects detected (effects max size = {EffectQueue.max_size}).'
     endif
   enddef
 
@@ -144,11 +144,13 @@ export class Signal
   def Write(newValue: any)
     this._value = newValue
 
-    Transaction(() => {
-      for effect in this._effects
-        gQueue.Push(effect)
-      endfor
-    })
+    Begin()
+
+    for effect in this._effects
+      gQueue.Push(effect)
+    endfor
+
+    Commit()
   enddef
 
   def AddEffect(effect: Effect)
