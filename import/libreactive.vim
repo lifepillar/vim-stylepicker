@@ -151,6 +151,10 @@ export class Signal implements ISignal
   def RemoveEffect(effect: Effect)
     effect->RemoveFrom(this._effects)
   enddef
+
+  def Clear()
+    this._effects = []
+  enddef
 endclass
 
 def AsSignal(s: any): Signal
