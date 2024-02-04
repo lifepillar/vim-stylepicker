@@ -3,29 +3,29 @@ vim9script
 import 'libtinytest.vim'           as tt
 import '../import/libreactive.vim' as react
 
-def RW(value: any): list<func>
-  var s = react.Signal.new(value)
-  return [s.Read, s.Write]
+def GetSet(value: any): list<func>
+  var p = react.Property.new(value)
+  return [p.Get, p.Set]
 enddef
 
-def Test_React_SimpleSignal()
-  var cnt = react.Signal.new(2)
-  const DoubleCount = () => cnt.Read() * 2
+def Test_React_SimpleProperty()
+  var cnt = react.Property.new(2)
+  const DoubleCount = () => cnt.Get() * 2
 
   assert_equal(DoubleCount(), 4)
 
-  cnt.Write(3)
+  cnt.Set(3)
 
   assert_equal(DoubleCount(), 6)
 
-  cnt.Write(cnt.Read() + 2)
+  cnt.Set(cnt.Get() + 2)
 
   assert_equal(DoubleCount(), 10)
 enddef
 
 def Test_React_SimpleEffect()
   var result = 0
-  const [Count, SetCount] = RW(1)
+  const [Count, SetCount] = GetSet(1)
 
   react.CreateEffect(() => {
     result = Count()
@@ -43,8 +43,8 @@ def Test_React_SimpleEffect()
 enddef
 
 def Test_React_SetWithTimer()
-  const [Count, SetCount] = RW(2)
-  const [Multiplier, _] = RW(3)
+  const [Count, SetCount] = GetSet(2)
+  const [Multiplier, _] = GetSet(3)
   const Product = (): number => Count() * Multiplier()
   var result = 0
 
@@ -65,7 +65,7 @@ enddef
 
 def Test_React_Effect()
   var flag = false
-  const [Count, SetCount] = RW(2)
+  const [Count, SetCount] = GetSet(2)
   const DoubleCount = (): number => {
     flag = !flag
     return Count() * 2
@@ -83,9 +83,9 @@ def Test_React_Effect()
   assert_equal(DoubleCount(), -8)
 enddef
 
-def Test_React_MultipleSignals()
-  const [FirstName, SetFirstName] = RW('John')
-  const [LastName, SetLastName] = RW('Smith')
+def Test_React_MultipleProperties()
+  const [FirstName, SetFirstName] = GetSet('John')
+  const [LastName, SetLastName] = GetSet('Smith')
   var name1 = ''
   var name2 = ''
 
@@ -113,8 +113,8 @@ def Test_React_MultipleSignals()
 enddef
 
 def Test_React_CachedComputation()
-  const [FirstName, SetFirstName] = RW('John')
-  const [LastName, SetLastName] = RW('Smith')
+  const [FirstName, SetFirstName] = GetSet('John')
+  const [LastName, SetLastName] = GetSet('Smith')
   var run = 0
   var name = ''
 
@@ -152,9 +152,9 @@ def Test_React_CachedComputation()
 enddef
 
 def Test_React_FineGrainedReaction()
-  const [FirstName, SetFirstName] = RW('John')
-  const [LastName, SetLastName] = RW('Smith')
-  const [ShowFullName, SetShowFullName] = RW(true)
+  const [FirstName, SetFirstName] = GetSet('John')
+  const [LastName, SetLastName] = GetSet('Smith')
+  const [ShowFullName, SetShowFullName] = GetSet(true)
   var name = ''
   var run = 0
 
@@ -208,8 +208,8 @@ def Test_React_FineGrainedReaction()
 enddef
 
 def Test_React_EffectCascade()
-  const [A, SetA] = RW(2)
-  const [B, SetB] = RW(1)
+  const [A, SetA] = GetSet(2)
+  const [B, SetB] = GetSet(1)
   var result = -1
 
   react.CreateEffect(() => {
@@ -229,8 +229,8 @@ def Test_React_EffectCascade()
 enddef
 
 def Test_React_EffectCascadeInverted()
-  const [A, SetA] = RW(2)
-  const [B, SetB] = RW(1)
+  const [A, SetA] = GetSet(2)
+  const [B, SetB] = GetSet(1)
   var result = -1
 
   assert_equal(2, A())
@@ -259,7 +259,7 @@ def Test_React_EffectCascadeInverted()
 enddef
 
 def Test_React_SelfRecursionIsDetected()
-  const [V1, SetV1] = RW(4)
+  const [V1, SetV1] = GetSet(4)
 
   # The effect is bound to the signal because the effect's function reads the
   # signal. But then the effect would be recursively triggered when the signal
@@ -272,8 +272,8 @@ def Test_React_SelfRecursionIsDetected()
 enddef
 
 def Test_React_RecursiveEffectsAreDetected()
-  const [V2, SetV2] = RW(3)
-  const [V3, SetV3] = RW(5)
+  const [V2, SetV2] = GetSet(3)
+  const [V3, SetV3] = GetSet(5)
 
   tt.AssertFails(() => {
     react.CreateEffect(() => {
@@ -301,9 +301,9 @@ type View = func(): list<string>
 type Reader = func(): any
 
 def Test_React_VStack()
-  const [V1, SetV1] = RW('a')
-  const [V2, SetV2] = RW('b')
-  const [V3, SetV3] = RW('b')
+  const [V1, SetV1] = GetSet('a')
+  const [V2, SetV2] = GetSet('b')
+  const [V3, SetV3] = GetSet('b')
   const View1 = (): list<string> => [V1(), V2()]
   const View2 = (): list<string> => [V2(), V1()]
 
@@ -348,7 +348,7 @@ def Test_React_VStack()
 enddef
 
 def Test_React_EffectSimpleOrdering()
-  const [V1, SetV1] = RW(0)
+  const [V1, SetV1] = GetSet(0)
   var result = ''
 
   react.CreateEffect(() => {
@@ -375,8 +375,8 @@ def Test_React_EffectOrdering()
   # Effects are executed as atomic units: this makes it easier to reason about
   # the code. The example below executes as if effects were run in the order
   # (1), (2), (3), (2). No interleaving among effects is possible.
-  const [V1, SetV1] = RW(1)
-  const [V2, SetV2] = RW(2)
+  const [V1, SetV1] = GetSet(1)
+  const [V2, SetV2] = GetSet(2)
   var result = ''
   var n = 0
 
@@ -439,8 +439,8 @@ def Test_React_EffectOrdering()
 enddef
 
 def Test_React_NotRecursive()
-  const [V1, SetV1] = RW(1)
-  const [V2, SetV2] = RW(2)
+  const [V1, SetV1] = GetSet(1)
+  const [V2, SetV2] = GetSet(2)
   var sequence = ''
 
   react.CreateEffect(() => { # Observes V1
@@ -471,8 +471,8 @@ def Test_React_NotRecursive()
 enddef
 
 def Test_React_NotRecursiveTransaction()
-  const [V1, SetV1] = RW(1)
-  const [V2, SetV2] = RW(2)
+  const [V1, SetV1] = GetSet(1)
+  const [V2, SetV2] = GetSet(2)
   var sequence = ''
 
   react.Transaction(() => {

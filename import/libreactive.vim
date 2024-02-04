@@ -17,12 +17,16 @@ def RemoveFrom(v: any, items: list<any>)
 enddef
 # }}}
 
-interface ISignal
+interface IProperty
+  def Get(): any
+  def Set(value: any)
+  def Clear()
+  def RemoveEffect(effect: any)
 endinterface
 
 class Effect
   var Fn: func()
-  public var dependentSignals: list<ISignal> = []
+  public var dependentProperties: list<IProperty> = []
 
   def Execute()
     var prevActive = gActiveEffect
@@ -35,14 +39,14 @@ class Effect
   enddef
 
   def ClearDependencies()
-    for signal in this.dependentSignals
-      AsSignal(signal).RemoveEffect(this)
+    for property in this.dependentProperties
+      property.RemoveEffect(this)
     endfor
-    this.dependentSignals = []
+    this.dependentProperties = []
   enddef
 endclass
 
-class EffectQueue
+class EffectsQueue
   var _q: list<Effect> = []
   var _start: number = 0
 
@@ -59,8 +63,8 @@ class EffectQueue
   def Push(effect: Effect)
     this._q->add(effect)
 
-    if len(this._q) > EffectQueue.max_size
-      throw $'[Reactive] Potentially recursive effects detected (effects max size = {EffectQueue.max_size}).'
+    if len(this._q) > EffectsQueue.max_size
+      throw $'[Reactive] Potentially recursive effects detected (effects max size = {EffectsQueue.max_size}).'
     endif
   enddef
 
@@ -77,15 +81,15 @@ endclass
 
 # Global state {{{
 var gActiveEffect: Effect = null_object
-var gQueue = EffectQueue.new()
-var gTransaction = 0
-var gInsideCreateEffect = false
+var gTransaction          = 0 # 0 = not in a transaction, >=1 = inside transaction, >1 = in nested transaction
+var gCreatingEffect       = false
+var gQueue                = EffectsQueue.new()
 
 export def Reinit()
-  gActiveEffect = null_object
+  gActiveEffect   = null_object
+  gTransaction    = 0
+  gCreatingEffect = false
   gQueue.Reset()
-  gTransaction = 0
-  gInsideCreateEffect = false
 enddef
 # }}}
 
@@ -123,21 +127,21 @@ export def Transaction(Body: func())
 enddef
 # }}}
 
-export class Signal implements ISignal
+export class Property implements IProperty
   var _value: any = null
   var _effects: list<Effect> = []
 
-  def Read(): any
+  def Get(): any
     if gActiveEffect != null && gActiveEffect->NotIn(this._effects)
       this._effects->add(gActiveEffect)
-      gActiveEffect.dependentSignals->add(this)
+      gActiveEffect.dependentProperties->add(this)
     endif
 
     return this._value
   enddef
 
-  def Write(newValue: any)
-    this._value = newValue
+  def Set(value: any)
+    this._value = value
 
     Begin()
     for effect in this._effects
@@ -157,22 +161,18 @@ export class Signal implements ISignal
   enddef
 endclass
 
-def AsSignal(s: any): Signal
-  return s
-enddef
-
 export def CreateEffect(Fn: func())
-  if gInsideCreateEffect
+  if gCreatingEffect
     throw 'Nested CreateEffect() calls detected'
   endif
-  gInsideCreateEffect = true
   var runningEffect = Effect.new(Fn)
+  gCreatingEffect = true
   runningEffect.Execute() # Necessary to bind to dependent signals
-  gInsideCreateEffect = false
+  gCreatingEffect = false
 enddef
 
 export def CreateMemo(Fn: func(): any): func(): any
-  var signal = Signal.new()
-  CreateEffect(() => signal.Write(Fn()))
-  return signal.Read
+  var signal = Property.new()
+  CreateEffect(() => signal.Set(Fn()))
+  return signal.Get
 enddef
