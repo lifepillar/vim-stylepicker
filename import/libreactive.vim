@@ -86,25 +86,32 @@ endclass
 # }}}
 
 # Global state {{{
+const DEFAULT_POOL = '__DEFAULT__'
 var gActiveEffect: Effect = null_object
-var gTransaction          = 0 # 0 = not in a transaction, >=1 = inside transaction, >1 = in nested transaction
-var gCreatingEffect       = false
-var gQueue                = EffectsQueue.new()
-var gPropertyRegistry: list<IProperty> = []
+var gTransaction = 0 # 0 = not in a transaction, >=1 = inside transaction, >1 = in nested transaction
+var gCreatingEffect = false
+var gQueue = EffectsQueue.new()
+var gPropertyRegistry: dict<list<IProperty>> = {DEFAULT_POOL: []}
 
-export def Reset(hard = false)
+export def Reinit()
   gActiveEffect   = null_object
   gTransaction    = 0
   gCreatingEffect = false
   gQueue.Reset()
+enddef
 
-  for property in gPropertyRegistry
-    property.Clear()
+export def Clear(poolName = DEFAULT_POOL, hard = false)
+  const pools = empty(poolName) ? keys(gPropertyRegistry) : [poolName]
+
+  for pool in pools
+    for property in gPropertyRegistry[pool]
+      property.Clear()
+    endfor
+
+    if hard
+      gPropertyRegistry[pool] = []
+    endif
   endfor
-
-  if hard
-    gPropertyRegistry = []
-  endif
 enddef
 # }}}
 
@@ -145,10 +152,14 @@ enddef
 # Properties {{{
 export class Property implements IProperty
   var _value: any = null
+  var _pool = DEFAULT_POOL
   var _effects: list<Effect> = []
 
-  def new(this._value = v:none)
-    gPropertyRegistry->add(this)
+  def new(this._value = v:none, this._pool = v:none)
+    if !gPropertyRegistry->has_key(this._pool)
+      gPropertyRegistry[this._pool] = []
+    endif
+    gPropertyRegistry[this._pool]->add(this)
   enddef
 
   def Get(): any

@@ -522,8 +522,34 @@ def Test_React_EffectString()
   assert_match('<lambda>\d\+', effects[0])
 enddef
 
+def Test_React_PropertyInsideFunction()
+  var result = ''
+  const F = (): react.Property => {
+    var p = react.Property.new('a', 'FOO')
+
+    react.CreateEffect(() => {
+      result ..= p.Get()
+    })
+
+    return p
+  }
+  var q = F()
+  q.Set('b')
+
+  assert_equal('ab', result)
+
+  react.Clear('FOO')
+  q.Set('c')
+
+  assert_equal('ab', result)
+enddef
+
+
+tt.Setup = () => {
+  react.Reinit() # Reset libreactive's internal state
+}
 tt.Teardown = () => {
-  react.Reset(true) # Clean up after running each test
+  react.Clear('', true) # Clean up after each test
 }
 
 tt.Run('_React_')
