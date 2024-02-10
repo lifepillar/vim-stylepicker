@@ -103,7 +103,7 @@ export def Reset(hard = false)
   endfor
 
   if hard
-    gPropertyRegistry = []  # Release lambdas
+    gPropertyRegistry = []
   endif
 enddef
 # }}}
