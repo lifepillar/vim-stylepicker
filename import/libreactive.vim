@@ -17,6 +17,7 @@ def RemoveFrom(v: any, items: list<any>)
 enddef
 # }}}
 
+# Effects {{{
 interface IProperty
   def Get(): any
   def Set(value: any)
@@ -43,6 +44,10 @@ class Effect
       property.RemoveEffect(this)
     endfor
     this.dependentProperties = []
+  enddef
+
+  def String(): string
+    return substitute(printf('%s', this.Fn), 'function(''\(.\+\)'')', '\1', '')
   enddef
 endclass
 
@@ -78,6 +83,7 @@ class EffectsQueue
     this._start = 0
   enddef
 endclass
+# }}}
 
 # Global state {{{
 var gActiveEffect: Effect = null_object
@@ -93,7 +99,7 @@ export def Reinit()
 enddef
 # }}}
 
-# Transaction {{{
+# Transactions {{{
 # By default, when a signal is updated, its effects are triggered
 # synchronously. It is possible, however, to perform several changes to one or
 # more signals within a transaction, in which case notifications are sent only
@@ -127,6 +133,7 @@ export def Transaction(Body: func())
 enddef
 # }}}
 
+# Properties {{{
 export class Property implements IProperty
   var _value: any = null
   var _effects: list<Effect> = []
@@ -159,8 +166,14 @@ export class Property implements IProperty
   def Clear()
     this._effects = []
   enddef
-endclass
 
+  def Effects(): list<string>
+    return mapnew(this._effects, (_, eff: Effect): string => eff.String())
+  enddef
+endclass
+# }}}
+
+# Functions {{{
 export def CreateEffect(Fn: func())
   if gCreatingEffect
     throw 'Nested CreateEffect() calls detected'
@@ -176,3 +189,4 @@ export def CreateMemo(Fn: func(): any): func(): any
   CreateEffect(() => signal.Set(Fn()))
   return signal.Get
 enddef
+# }}}
