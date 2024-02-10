@@ -508,8 +508,23 @@ def Test_React_NotRecursiveTransaction()
   assert_equal('ABCABA', sequence)
 enddef
 
-tt.Setup = () => {
-  react.Reinit() # Make sure each test starts with a clean slate
+def Test_React_EffectString()
+  var property = react.Property.new('a')
+  var result = ''
+
+  react.CreateEffect(() => {
+    result = property.Get()
+  })
+  const effects = property.Effects()
+
+  assert_equal('a', result)
+  assert_equal(1, len(effects))
+  assert_match('<lambda>\d\+', effects[0])
+enddef
+
+tt.Teardown = () => {
+  react.Reset(true) # Clean up after running each test
 }
 
 tt.Run('_React_')
+
