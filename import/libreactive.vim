@@ -90,12 +90,21 @@ var gActiveEffect: Effect = null_object
 var gTransaction          = 0 # 0 = not in a transaction, >=1 = inside transaction, >1 = in nested transaction
 var gCreatingEffect       = false
 var gQueue                = EffectsQueue.new()
+var gPropertyRegistry: list<IProperty> = []
 
-export def Reinit()
+export def Reset(hard = false)
   gActiveEffect   = null_object
   gTransaction    = 0
   gCreatingEffect = false
   gQueue.Reset()
+
+  for property in gPropertyRegistry
+    property.Clear()
+  endfor
+
+  if hard
+    gPropertyRegistry = []  # Release lambdas
+  endif
 enddef
 # }}}
 
@@ -137,6 +146,10 @@ enddef
 export class Property implements IProperty
   var _value: any = null
   var _effects: list<Effect> = []
+
+  def new(this._value = v:none)
+    gPropertyRegistry->add(this)
+  enddef
 
   def Get(): any
     if gActiveEffect != null && gActiveEffect->NotIn(this._effects)
