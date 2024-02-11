@@ -39,7 +39,7 @@ var gStylePickerID        = -1 # The style picker's window ID
 var gX                    = 0
 var gY                    = 0
 var gEdited               = {fg: false, bg: false, sp: false} # Has the color been edited?
-var gFavoritePath         = get(g:, 'stylepicker_favorite_path', '')
+var gFavoritePath         = ''
 var gTimeLastDigitPressed = reltime()
 var gRecentCapacity       = get(g:, 'stylepicker_recent', 20)
 var gNumRedraws           = 0 # For debugging
@@ -1424,11 +1424,10 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
   ResetHighlight()
   gEdited = {fg: false, bg: false, sp: false}
   gNumRedraws = 0
+  gFavoritePath = get(g:, 'stylepicker_favorite_path', '')
 
-  var favPath = get(g:, 'stylepicker_favorites', '')
-
-  if !empty(favPath)
-    Favorite.Set(LoadPalette(favPath))
+  if !empty(gFavoritePath)
+    Favorite.Set(LoadPalette(gFavoritePath))
   endif
 
   if empty(hiGroup)
