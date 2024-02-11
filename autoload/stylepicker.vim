@@ -312,6 +312,7 @@ class ID
   static const RED_SLIDER      = 128
   static const GREEN_SLIDER    = 129
   static const BLUE_SLIDER     = 130
+  static const GRAY_SLIDER     = 132
   static const RECENT_COLORS   = 1024 # Each recent color line gets a +1 id
   static const FAVORITE_COLORS = 8192 # Each favorite color line gets a +1 id
 endclass
@@ -362,8 +363,8 @@ def Text(t: string): RichText
   return {text: t, props: []}
 enddef
 
-def Blank(): RichText
-  return Text('')
+def Blank(width = 0): RichText
+  return Text(repeat(' ', width))
 enddef
 
 def Styled(
@@ -816,9 +817,10 @@ enddef
 
 def Increment(winID: number): func(): bool
   return (): bool => {
+    const pane = Pane.Get()
     const selectedID = SelectedID.Get()
 
-    if Pane.Get() == RGB_PANE
+    if pane == RGB_PANE
       var [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
 
       if selectedID == ID.RED_SLIDER
@@ -835,15 +837,23 @@ def Increment(winID: number): func(): bool
       return true
     endif
 
+    if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
+      var gray = libcolor.Hex2Gray(Color.Get())
+      gray = IncrementValue(gray, 255)
+      Color.Set(libcolor.Gray2Hex(gray))
+      return true
+    endif
+
     return false
   }
 enddef
 
 def Decrement(winID: number): func(): bool
   return (): bool => {
+    const pane = Pane.Get()
     const selectedID = SelectedID.Get()
 
-    if Pane.Get() == RGB_PANE
+    if pane == RGB_PANE
       var [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
 
       if selectedID == ID.RED_SLIDER
@@ -857,6 +867,13 @@ def Decrement(winID: number): func(): bool
       endif
 
       Color.Set(libcolor.Rgb2Hex(red, green, blue))
+      return true
+    endif
+
+    if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
+      var gray = libcolor.Hex2Gray(Color.Get())
+      gray = DecrementValue(gray, 0)
+      Color.Set(libcolor.Gray2Hex(gray))
       return true
     endif
 
@@ -994,9 +1011,14 @@ def ClearColor(winID: number): func(): bool
   }
 enddef
 
-def SwitchPane(pane: number): func(): bool
+def SwitchPane(winID: number, pane: number): func(): bool
   return () => {
     Pane.Set(pane)
+
+    if pane != HELP_PANE
+      SelectedID.Set(FirstSelectable(winID))
+    endif
+
     return true
   }
 enddef
@@ -1012,14 +1034,14 @@ def ActionMap(winID: number): dict<func(): bool>
       [KEYMAP['down'                ]]: SelectNext(winID),
       [KEYMAP['fg<bg<sp'            ]]: FgBgSPrev(),
       [KEYMAP['fg>bg>sp'            ]]: FgBgSNext(),
-      [KEYMAP['gray-pane'           ]]: SwitchPane(GRAY_PANE),
-      [KEYMAP['help'                ]]: SwitchPane(HELP_PANE),
-      [KEYMAP['hsb-pane'            ]]: SwitchPane(HSB_PANE),
+      [KEYMAP['gray-pane'           ]]: SwitchPane(winID, GRAY_PANE),
+      [KEYMAP['help'                ]]: SwitchPane(winID, HELP_PANE),
+      [KEYMAP['hsb-pane'            ]]: SwitchPane(winID, HSB_PANE),
       [KEYMAP['increment'           ]]: Increment(winID),
       [KEYMAP['paste'               ]]: PasteColor(winID),
       [KEYMAP['pick-from-palette'   ]]: PickColor(winID),
       [KEYMAP['remove-from-palette' ]]: RemoveColor(winID),
-      [KEYMAP['rgb-pane'            ]]: SwitchPane(RGB_PANE),
+      [KEYMAP['rgb-pane'            ]]: SwitchPane(winID, RGB_PANE),
       [KEYMAP['set-color'           ]]: ChooseColor(),
       [KEYMAP['set-higroup'         ]]: ChooseHiGrp(),
       [KEYMAP['toggle-bold'         ]]: ToggleStyleAttribute('bold'),
@@ -1226,7 +1248,7 @@ enddef
 # }}}
 
 # RGB Pane {{{
-def SliderView(): list<RichText>
+def RGBSliderView(): list<RichText>
   const [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
   const selectedID         = SelectedID.Get()
 
@@ -1241,7 +1263,7 @@ def RgbPane(winID: number, RecentView: View, FavoriteView: View)
   const RgbView = VStack(
     TitleView,
     BlankView,
-    SliderView,
+    RGBSliderView,
     StepView,
     BlankView,
     ColorInfoView,
@@ -1259,6 +1281,54 @@ def RgbPane(winID: number, RecentView: View, FavoriteView: View)
     endif
 
     popup_settext(winID, RgbView())
+    ++gNumRedraws
+
+    if DEBUG && gNumRedraws > 1
+      Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
+    endif
+  })
+enddef
+# }}}
+# Grayscale Pane {{{
+def GraySliderView(): list<RichText>
+  const gray       = libcolor.Hex2Gray(Color.Get())
+  const isSelected = SelectedID.Get() == ID.GRAY_SLIDER
+  const gutterWidth = strdisplaywidth(Gutter(isSelected), 0)
+
+  return [
+    Label(Text('Grayscale')),
+    Blank(PopupWidth())
+    ->Styled(Prop.GRAY000, gutterWidth + 6, 2)
+    ->Styled(Prop.GRAY025, gutterWidth + 14, 2)
+    ->Styled(Prop.GRAY050, gutterWidth + 22, 2)
+    ->Styled(Prop.GRAY075, gutterWidth + 30, 2)
+    ->Styled(Prop.GRAY100, gutterWidth + 38, 2),
+    Slider(ID.GRAY_SLIDER, 'G', gray, isSelected),
+  ]
+enddef
+
+def GrayscalePane(winID: number, RecentView: View, FavoriteView: View)
+  const GrayscaleView = VStack(
+   TitleView,
+    BlankView,
+    GraySliderView,
+    StepView,
+    BlankView,
+    ColorInfoView,
+    BlankView,
+    QuotationView,
+    BlankView,
+    RecentView,
+    BlankView,
+    FavoriteView,
+  )
+
+  react.CreateEffect(() => {
+    if Pane.Get() != GRAY_PANE
+      return
+    endif
+
+    popup_settext(winID, GrayscaleView())
     ++gNumRedraws
 
     if DEBUG && gNumRedraws > 1
@@ -1483,6 +1553,7 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
   SelectedID.Set(ID.RED_SLIDER)
 
   RgbPane(winID, RecentView, FavoriteView)
+  GrayscalePane(winID, RecentView, FavoriteView)
   HelpPane(winID)
 
   react.CreateEffect(() => {
