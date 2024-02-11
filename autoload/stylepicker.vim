@@ -591,39 +591,38 @@ enddef
 
 # Key map {{{
 const KEYMAP = extend({
-  'close':            "x",
-  'cancel':           "X",
-  'yank':             "Y",
-  'paste':            "P",
-  'down':             "\<down>",
-  'up':               "\<up>",
-  'top':              "<",
-  'bot':              ">",
-  'decrement':        "\<left>",
-  'increment':        "\<right>",
-  'fg>bg>sp':         "\<tab>",
-  'fg<bg<sp':         "\<s-tab>",
-  'pick-color':       "\<enter>",
-  'remove-color':     "D",
-  'toggle-bold':      "B",
-  'toggle-italic':    "I",
-  'toggle-underline': "U",
-  'toggle-reverse':   "V",
-  'toggle-standout':  "S",
-  'toggle-strike':    "K",
-  'set-underline':    "_",
-  'set-undercurl':    "~",
-  'set-underdotted':  ".",
-  'set-underdashed':  "-",
-  'set-underdouble':  "=",
-  'new-color':        "E",
-  'new-higroup':      "N",
-  'clear':            "Z",
-  'add-to-favorite':  "A",
-  'rgb-pane':         "R",
-  'hsb-pane':         "H",
-  'gray-pane':        "G",
-  'help':             "?",
+  'add-to-favorite':      "A",
+  'bot':                  ">",
+  'cancel':               "X",
+  'clear-color':          "Z",
+  'close':                "x",
+  'decrement':            "\<left>",
+  'down':                 "\<down>",
+  'fg<bg<sp':             "\<s-tab>",
+  'fg>bg>sp':             "\<tab>",
+  'gray-pane':            "G",
+  'help':                 "?",
+  'hsb-pane':             "H",
+  'increment':            "\<right>",
+  'paste':                "P",
+  'pick-from-palette':    "\<enter>",
+  'remove-from-palette':  "D",
+  'rgb-pane':             "R",
+  'set-color':            "E",
+  'set-higroup':          "N",
+  'toggle-bold':          "B",
+  'toggle-italic':        "I",
+  'toggle-reverse':       "V",
+  'toggle-standout':      "S",
+  'toggle-strikethrough': "K",
+  'toggle-undercurl':     "~",
+  'toggle-underdashed':   "-",
+  'toggle-underdotted':   ".",
+  'toggle-underdouble':   "=",
+  'toggle-underline':     "U",
+  'top':                  "<",
+  'up':                   "\<up>",
+  'yank':                 "Y",
 }, get(g:, 'stylepicker_keys', {}), 'force')
 
 const PRETTY_KEY = {
@@ -1004,39 +1003,38 @@ enddef
 
 def ActionMap(winID: number): dict<func(): bool>
   return {
-      [KEYMAP['close'           ]]: Close(winID),
-      [KEYMAP['cancel'          ]]: Cancel(winID),
-      [KEYMAP['down'            ]]: SelectNext(winID),
-      [KEYMAP['up'              ]]: SelectPrev(winID),
-      [KEYMAP['top'             ]]: GoToTop(winID),
-      [KEYMAP['bot'             ]]: GoToBottom(winID),
-      [KEYMAP['decrement'       ]]: Decrement(winID),
-      [KEYMAP['increment'       ]]: Increment(winID),
-      [KEYMAP['fg>bg>sp'        ]]: FgBgSNext(),
-      [KEYMAP['fg<bg<sp'        ]]: FgBgSPrev(),
-      [KEYMAP['pick-color'      ]]: PickColor(winID),
-      [KEYMAP['remove-color'    ]]: RemoveColor(winID),
-      [KEYMAP['yank'            ]]: YankColor(winID),
-      [KEYMAP['paste'           ]]: PasteColor(winID),
-      [KEYMAP['add-to-favorite' ]]: AddToFavorite(winID),
-      [KEYMAP['toggle-bold'     ]]: ToggleStyleAttribute('bold'),
-      [KEYMAP['toggle-italic'   ]]: ToggleStyleAttribute('italic'),
-      [KEYMAP['toggle-underline']]: ToggleStyleAttribute('underline'),
-      [KEYMAP['toggle-reverse'  ]]: ToggleStyleAttribute('reverse'),
-      [KEYMAP['toggle-standout' ]]: ToggleStyleAttribute('standout'),
-      [KEYMAP['toggle-strike'   ]]: ToggleStyleAttribute('strikethrough'),
-      [KEYMAP['set-underline'   ]]: ToggleStyleAttribute('underline'),
-      [KEYMAP['set-undercurl'   ]]: ToggleStyleAttribute('undercurl'),
-      [KEYMAP['set-underdotted' ]]: ToggleStyleAttribute('underdotted'),
-      [KEYMAP['set-underdashed' ]]: ToggleStyleAttribute('underdashed'),
-      [KEYMAP['set-underdouble' ]]: ToggleStyleAttribute('underdouble'),
-      [KEYMAP['new-color'       ]]: ChooseColor(),
-      [KEYMAP['new-higroup'     ]]: ChooseHiGrp(),
-      [KEYMAP['clear'           ]]: ClearColor(winID),
-      [KEYMAP['rgb-pane'        ]]: SwitchPane(RGB_PANE),
-      [KEYMAP['hsb-pane'        ]]: SwitchPane(HSB_PANE),
-      [KEYMAP['gray-pane'       ]]: SwitchPane(GRAY_PANE),
-      [KEYMAP['help'            ]]: SwitchPane(HELP_PANE),
+      [KEYMAP['add-to-favorite'     ]]: AddToFavorite(winID),
+      [KEYMAP['bot'                 ]]: GoToBottom(winID),
+      [KEYMAP['cancel'              ]]: Cancel(winID),
+      [KEYMAP['clear-color'         ]]: ClearColor(winID),
+      [KEYMAP['close'               ]]: Close(winID),
+      [KEYMAP['decrement'           ]]: Decrement(winID),
+      [KEYMAP['down'                ]]: SelectNext(winID),
+      [KEYMAP['fg<bg<sp'            ]]: FgBgSPrev(),
+      [KEYMAP['fg>bg>sp'            ]]: FgBgSNext(),
+      [KEYMAP['gray-pane'           ]]: SwitchPane(GRAY_PANE),
+      [KEYMAP['help'                ]]: SwitchPane(HELP_PANE),
+      [KEYMAP['hsb-pane'            ]]: SwitchPane(HSB_PANE),
+      [KEYMAP['increment'           ]]: Increment(winID),
+      [KEYMAP['paste'               ]]: PasteColor(winID),
+      [KEYMAP['pick-from-palette'   ]]: PickColor(winID),
+      [KEYMAP['remove-from-palette' ]]: RemoveColor(winID),
+      [KEYMAP['rgb-pane'            ]]: SwitchPane(RGB_PANE),
+      [KEYMAP['set-color'           ]]: ChooseColor(),
+      [KEYMAP['set-higroup'         ]]: ChooseHiGrp(),
+      [KEYMAP['toggle-bold'         ]]: ToggleStyleAttribute('bold'),
+      [KEYMAP['toggle-italic'       ]]: ToggleStyleAttribute('italic'),
+      [KEYMAP['toggle-reverse'      ]]: ToggleStyleAttribute('reverse'),
+      [KEYMAP['toggle-standout'     ]]: ToggleStyleAttribute('standout'),
+      [KEYMAP['toggle-strikethrough']]: ToggleStyleAttribute('strikethrough'),
+      [KEYMAP['toggle-undercurl'    ]]: ToggleStyleAttribute('undercurl'),
+      [KEYMAP['toggle-underdashed'  ]]: ToggleStyleAttribute('underdashed'),
+      [KEYMAP['toggle-underdotted'  ]]: ToggleStyleAttribute('underdotted'),
+      [KEYMAP['toggle-underdouble'  ]]: ToggleStyleAttribute('underdouble'),
+      [KEYMAP['toggle-underline'    ]]: ToggleStyleAttribute('underline'),
+      [KEYMAP['top'                 ]]: GoToTop(winID),
+      [KEYMAP['up'                  ]]: SelectPrev(winID),
+      [KEYMAP['yank'                ]]: YankColor(winID),
   }
 enddef
 # }}}
@@ -1273,35 +1271,39 @@ enddef
 # Help Pane {{{
 def HelpPane(winID: number)
   var s = [
-    KeySymbol("up"),
-    KeySymbol("down"),
-    KeySymbol("top"),
-    KeySymbol("fg>bg>sp"),
-    KeySymbol("fg<bg<sp"),
-    KeySymbol("help"),
-    KeySymbol("rgb-pane"),
-    KeySymbol("hsb-pane"),
-    KeySymbol("gray-pane"),
-    KeySymbol("close"),
-    KeySymbol("cancel"),
-    KeySymbol("toggle-bold"),
-    KeySymbol("toggle-italic"),
-    KeySymbol("toggle-underline"),
-    KeySymbol("toggle-strike"),
-    KeySymbol("toggle-reverse"),
-    KeySymbol("toggle-standout"),
-    KeySymbol("set-undercurl"),
-    KeySymbol("increment"),
-    KeySymbol("decrement"),
-    KeySymbol("yank"),
-    KeySymbol("paste"),
-    KeySymbol("new-color"),
-    KeySymbol("new-higroup"),
-    KeySymbol("clear"),
-    KeySymbol("add-to-favorite"),
-    KeySymbol("yank"),
-    KeySymbol("remove-color"),
-    KeySymbol("pick-color"),
+    KeySymbol('up'),                   # 00
+    KeySymbol('down'),                 # 01
+    KeySymbol('top'),                  # 02
+    KeySymbol('bot'),                  # 03
+    KeySymbol('fg>bg>sp'),             # 04
+    KeySymbol('fg<bg<sp'),             # 05
+    KeySymbol('rgb-pane'),             # 06
+    KeySymbol('hsb-pane'),             # 07
+    KeySymbol('gray-pane'),            # 08
+    KeySymbol('close'),                # 09
+    KeySymbol('cancel'),               # 10
+    KeySymbol('help'),                 # 11
+    KeySymbol('toggle-bold'),          # 12
+    KeySymbol('toggle-italic'),        # 13
+    KeySymbol('toggle-reverse'),       # 14
+    KeySymbol('toggle-standout'),      # 15
+    KeySymbol('toggle-strikethrough'), # 16
+    KeySymbol('toggle-underline'),     # 17
+    KeySymbol('toggle-undercurl'),     # 18
+    KeySymbol('toggle-underdashed'),   # 19
+    KeySymbol('toggle-underdotted'),   # 20
+    KeySymbol('toggle-underdouble'),   # 21
+    KeySymbol('increment'),            # 22
+    KeySymbol('decrement'),            # 23
+    KeySymbol('yank'),                 # 24
+    KeySymbol('paste'),                # 25
+    KeySymbol('set-color'),            # 26
+    KeySymbol('set-higroup'),          # 27
+    KeySymbol('clear-color'),          # 28
+    KeySymbol('add-to-favorite'),      # 29
+    KeySymbol('yank'),                 # 30
+    KeySymbol('remove-from-palette'),  # 31
+    KeySymbol('pick-from-palette'),    # 32
   ]
   const maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
 
@@ -1320,25 +1322,26 @@ def HelpPane(winID: number)
       Text($'{s[00]} Move up           {s[06]} RGB Pane'),
       Text($'{s[01]} Move down         {s[07]} HSB Pane'),
       Text($'{s[02]} Go to top         {s[08]} Grayscale'),
-      Text($'{s[03]} fg->bg->sp        {s[09]} Hide'),
-      Text($'{s[04]} sp->bg->fg        {s[10]} Hide and reset'),
-      Text($'{s[05]} Help pane'),
+      Text($'{s[03]} Go to bottom      {s[09]} Close'),
+      Text($'{s[04]} fg->bg->sp        {s[10]} Close and reset'),
+      Text($'{s[05]} sp->bg->fg        {s[11]} Help pane'),
       Blank(),
       Label(Text('Attributes')),
-      Text($'{s[11]} Toggle boldface   {s[15]} Toggle reverse'),
-      Text($'{s[12]} Toggle italics    {s[16]} Toggle standout'),
-      Text($'{s[13]} Toggle underline  {s[17]} Toggle undercurl'),
-      Text($'{s[14]} Toggle strikethrough'),
+      Text($'{s[12]} Toggle boldface   {s[17]} Toggle underline'),
+      Text($'{s[13]} Toggle italics    {s[18]} Toggle undercurl'),
+      Text($'{s[14]} Toggle reverse    {s[19]} Toggle underdaashed'),
+      Text($'{s[15]} Toggle standout   {s[20]} Toggle underdotted'),
+      Text($'{s[16]} Toggle strikethr. {s[21]} Toggle underdouble'),
       Blank(),
       Label(Text('Color')),
-      Text($'{s[18]} Increment value   {s[22]} New value'),
-      Text($'{s[19]} Decrement value   {s[23]} New hi group'),
-      Text($'{s[20]} Yank color        {s[24]} Clear color'),
-      Text($'{s[21]} Paste color       {s[25]} Add to favorites'),
+      Text($'{s[22]} Increment value   {s[26]} Set value'),
+      Text($'{s[23]} Decrement value   {s[27]} Set hi group'),
+      Text($'{s[24]} Yank color        {s[28]} Clear color'),
+      Text($'{s[25]} Paste color       {s[29]} Add to favorites'),
       Blank(),
       Label(Text('Recent & Favorites')),
-      Text($'{s[20]} Yank color        {s[28]} Pick color'),
-      Text($'{s[27]} Delete color'),
+      Text($'{s[30]} Yank color        {s[32]} Pick color'),
+      Text($'{s[31]} Delete color'),
     ])
   })
 enddef
