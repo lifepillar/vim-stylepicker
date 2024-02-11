@@ -922,12 +922,10 @@ def Cancel(winID: number): func(): bool
   return (): bool => {
     popup_close(winID)
 
-    # FIXME: revert only the changes of the stylepicker
+    # TODO: revert only the changes of the stylepicker
     if exists('g:colors_name') && !empty('g:colors_name')
       execute 'colorscheme' g:colors_name
     endif
-    echo "\r"
-    echomsg $'[Stylepicker] {gStylePickerID} canceled'
     return true
   }
 enddef
@@ -1357,8 +1355,6 @@ def ClosedCallback(winID: number, result: any = '')
 
   gX = popup_getoptions(winID).col
   gY = popup_getoptions(winID).line
-
-  echomsg $'[Stylepicker] {gStylePickerID} closed'
 enddef
 # }}}
 
