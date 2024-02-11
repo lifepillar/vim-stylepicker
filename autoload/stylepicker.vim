@@ -122,15 +122,27 @@ def HiGroupUnderCursor(): string
   return synIDattr(synIDtrans(synID(line('.'), col('.'), true)), 'name')
 enddef
 
-def HiGroupAttr(hiGroup: string, what: string, mode: string): string
-  var value = synIDattr(synIDtrans(hlID(hiGroup)), $'{what}#', mode)
+# When mode is 'gui', return either a hex value or an empty string
+# When mode is 'cterm', return either a numeric string or an empty string
+def HiGroupColorAttr(hiGroup: string, fgBgS: string, mode: string): string
+  var value = synIDattr(synIDtrans(hlID(hiGroup)), $'{fgBgS}#', mode)
 
-  if mode == 'cterm' && value !~ '\m^\d\+'
-    try
-      value = libcolor.CtermColorNumber(tolower(value), 16)
-    catch
+  if mode == 'gui'
+    if !empty(value) && value[0] != '#' # In terminals, HiGroupColorAttr() may return a GUI color name
+      value = libcolor.RgbName2Hex(value, '')
+    endif
+
+    return value
+  endif
+
+  if value !~ '\m^\d\+'
+    const num = libcolor.CtermColorNumber(value, 16)
+
+    if num >= 0
+      value = string(num)
+    else
       value = ''
-    endtry
+    endif
   endif
 
   return value
@@ -146,23 +158,14 @@ enddef
 
 # Try hard to determine a sensible hex value for the requested color attribute
 def GetColor(hiGroup: string, what: string): string
-  var value = HiGroupAttr(hiGroup, what, 'gui')
+  var value = HiGroupColorAttr(hiGroup, what, 'gui')
 
-  if !empty(value)
-    if value[0] == '#' # Fast path
-      return value
-    endif
-
-    # In the terminal, HiGroupAttr() may return a color name
-    value = get(v:colornames, value, '')
-
-    if !empty(value)
-      return value
-    endif
+  if !empty(value) # Fast path
+    return value
   endif
 
   if ColorMode() == 'cterm'
-    const ctermValue = HiGroupAttr(hiGroup, what == 'sp' ? 'ul' : what, 'cterm')
+    const ctermValue = HiGroupColorAttr(hiGroup, what == 'sp' ? 'ul' : what, 'cterm')
 
     if !empty(ctermValue)
       const hex = libcolor.ColorNumber2Hex(str2nr(ctermValue))
@@ -183,9 +186,9 @@ enddef
 # Initialize the highlight groups used by the style picker
 def ResetHighlight()
   const mode         = ColorMode()
-  const warnColor    = HiGroupAttr('WarningMsg', 'fg', mode)
-  const labelColor   = HiGroupAttr('Label',      'fg', mode)
-  const commentColor = HiGroupAttr('Comment',    'fg', mode)
+  const warnColor    = HiGroupColorAttr('WarningMsg', 'fg', mode)
+  const labelColor   = HiGroupColorAttr('Label',      'fg', mode)
+  const commentColor = HiGroupColorAttr('Comment',    'fg', mode)
 
   execute $'hi stylePickerOn            {mode}fg={labelColor}   term=bold             {mode}=bold'
   execute $'hi stylePickerOff           {mode}fg={commentColor} term=NONE             {mode}=NONE'
@@ -517,12 +520,10 @@ class ColorProperty extends react.Property
     var fgBgS = FgBgS.Get()
     var attrs: dict<any> = {name: HiGrp.Get(), [$'gui{fgBgS}']: newValue}
 
-    if ColorMode() == 'cterm'
-      if newValue == 'NONE'
-        attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = newValue
-      else
-        attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = string(libcolor.Approximate(newValue).xterm)
-      endif
+    if newValue == 'NONE'
+      attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = newValue
+    else
+      attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = string(libcolor.Approximate(newValue).xterm)
     endif
 
     react.Begin()
@@ -1118,18 +1119,22 @@ enddef
 # }}}
 # ColorInfoView {{{
 def ColorInfoView(): list<RichText>
-  const curColor  = Color.Get()
-  const altColor  = AltColor()
-  const approxCol = libcolor.Approximate(curColor)
-  const approxAlt = libcolor.Approximate(altColor)
-  const guiScore  = ComputeScore(curColor, altColor)
-  const termScore = ComputeScore(approxCol.hex, approxAlt.hex)
-  const delta     = printf("%.1f", approxCol.delta)[ : 2]
+  const curColor    = Color.Get()
+  const altColor    = AltColor()
+  const approxCol   = libcolor.Approximate(curColor)
+  const approxAlt   = libcolor.Approximate(altColor)
+  const contrast    = libcolor.ContrastColor(curColor)
+  const contrastAlt = libcolor.Approximate(contrast)
+  const guiScore    = ComputeScore(curColor, altColor)
+  const termScore   = ComputeScore(approxCol.hex, approxAlt.hex)
+  const delta       = printf("%.1f", approxCol.delta)[ : 2]
+  const guiGuess    = (curColor != HiGroupColorAttr(HiGrp.Get(), FgBgS.Get(), 'gui') ? '!' : ' ')
+  const ctermGuess  = (string(approxCol.xterm) != HiGroupColorAttr(HiGrp.Get(), FgBgS.Get(), 'cterm') ? '!' : ' ')
 
-  execute $'hi stylePickerGuiColor guibg={curColor} ctermbg={approxCol.xterm}'
-  execute $'hi stylePickerTermColor guibg={approxCol.hex} ctermbg={approxCol.xterm}'
+  execute $'hi stylePickerGuiColor guifg={contrast} guibg={curColor} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
+  execute $'hi stylePickerTermColor guifg={contrast} guibg={approxCol.hex} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
 
-  const info = $'        %s %-5S %3d/%s %-5S Δ{delta}'
+  const info = $' {guiGuess}   {ctermGuess}   %s %-5S %3d/%s %-5S Δ{delta}'
   return [
     Text(printf(info,
       curColor[1 : ],
