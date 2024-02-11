@@ -1396,6 +1396,10 @@ def HandleDigit(winID: number, digit: number): bool
 enddef
 
 def ProcessKeyPress(winID: number, key: string): bool
+  if get(g:, 'stylepicker_disable_keys', false)
+    return false
+  endif
+
   gNumRedraws = 0
 
   if Pane.Get() == HELP_PANE && key !~ '\m[RGB?xX]'
