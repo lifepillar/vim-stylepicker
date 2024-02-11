@@ -34,6 +34,7 @@ const GRAY_PANE           = 2
 const HELP_PANE           = 99
 
 # Internal state
+var DEBUG                 = false
 var gStylePickerID        = -1 # The style picker's window ID
 var gX                    = 0
 var gY                    = 0
@@ -43,6 +44,7 @@ var gTimeLastDigitPressed = reltime()
 var gRecentCapacity       = get(g:, 'stylepicker_recent', 20)
 var gNumRedraws           = 0 # For debugging
 var gActionMap: dict<func(): bool>
+
 
 # Helper functions {{{
 def In(v: any, items: list<any>): bool
@@ -1263,7 +1265,7 @@ def RgbPane(winID: number, RecentView: View, FavoriteView: View)
     popup_settext(winID, RgbView())
     ++gNumRedraws
 
-    if gNumRedraws > 1
+    if DEBUG && gNumRedraws > 1
       Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
     endif
   })
@@ -1421,6 +1423,7 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
   ResetHighlight()
   gEdited = {fg: false, bg: false, sp: false}
   gNumRedraws = 0
+  DEBUG = get(g:, 'stylepicker_debug', false)
 
   if empty(hiGroup)
     SetHiGroupUnderCursor()
