@@ -1418,12 +1418,18 @@ def ProcessKeyPress(winID: number, key: string): bool
 enddef
 
 def StylePicker(hiGroup: string = '', x = gX, y = gY)
+  DEBUG = get(g:, 'stylepicker_debug', false)
   react.Reinit() # TODO: REMOVE ME
   react.Clear(POOL) # Clear all effects
   ResetHighlight()
   gEdited = {fg: false, bg: false, sp: false}
   gNumRedraws = 0
-  DEBUG = get(g:, 'stylepicker_debug', false)
+
+  var favPath = get(g:, 'stylepicker_favorites', '')
+
+  if !empty(favPath)
+    Favorite.Set(LoadPalette(favPath))
+  endif
 
   if empty(hiGroup)
     SetHiGroupUnderCursor()
@@ -1487,6 +1493,7 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
   popup_show(winID)
 enddef
 
+# Public interface {{{
 export def Open(hiGroup: string = '')
   const stylePickerIsOpened = gStylePickerID->In(popup_list())
 
@@ -1514,4 +1521,4 @@ export def Open(hiGroup: string = '')
   # })
   popup_show(gStylePickerID)
 enddef
-
+# }}}
