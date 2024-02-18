@@ -5,6 +5,7 @@ vim9script
 # - Search for FIXME issues
 # - Search for TODO issues
 # - Other panes (HSV, Gray)
+# - Hooks
 # - Mouse support
 
 if !has('popupwin') || !has('textprop') || v:version < 901
@@ -110,6 +111,17 @@ def Notification(winID: number, text: string, duration = 2000)
   endif
 enddef
 
+def Warn(text: string, duration = 2000)
+  popup_notification(Center(text), {
+    pos:         'topleft',
+    highlight:   'Normal',
+    time:        duration,
+    moved:       'any',
+    mousemoved:  'any',
+    borderchars: Borderchars(),
+  })
+enddef
+
 # Assign an integer score from zero to five to a pair of colors according to
 # how many criteria the pair satifies. Thresholds follow W3C guidelines.
 def ComputeScore(hexCol1: string, hexCol2: string): number
@@ -121,7 +133,13 @@ def ComputeScore(hexCol1: string, hexCol2: string): number
 enddef
 
 def HiGroupUnderCursor(): string
-  return synIDattr(synIDtrans(synID(line('.'), col('.'), true)), 'name')
+  var hiGrp: string = synIDattr(synIDtrans(synID(line('.'), col('.'), true)), 'name')
+
+  if empty(hiGrp)
+    return 'Normal'
+  endif
+
+  return hiGrp
 enddef
 
 # When mode is 'gui', return either a hex value or an empty string
@@ -312,7 +330,10 @@ class ID
   static const RED_SLIDER      = 128
   static const GREEN_SLIDER    = 129
   static const BLUE_SLIDER     = 130
-  static const GRAY_SLIDER     = 132
+  static const H_SLIDER        = 132
+  static const S_SLIDER        = 133
+  static const B_SLIDER        = 134
+  static const GRAY_SLIDER     = 256
   static const RECENT_COLORS   = 1024 # Each recent color line gets a +1 id
   static const FAVORITE_COLORS = 8192 # Each favorite color line gets a +1 id
 endclass
@@ -478,13 +499,19 @@ enddef
 
 # Reactive properties {{{
 const POOL       = 'stylepicker_pool'
+var   WinID      = react.Property.new(-1,            POOL) # StylePicker window ID
 var   Pane       = react.Property.new(RGB_PANE,      POOL) # Current pane
 var   HiGrp      = react.Property.new('Normal',      POOL) # Current highlight group
-var   FgBgS      = react.Property.new('fg',          POOL) # Current attribute ('fg', 'bg', or 'sp')
+var   HSBColor   = react.Property.new((): list<number> => [0, 0, 0],  POOL) # HSB values for the current color
+var   FgBgS      = react.Property.new('fg',         POOL) # Current attribute ('fg', 'bg', or 'sp')
 var   SelectedID = react.Property.new(ID.RED_SLIDER, POOL) # Text property ID of the currently selected line
 var   Step       = react.Property.new(1,             POOL) # Current increment/decrement step
 var   Recent     = react.Property.new([],            POOL) # List of recent colors
 var   Favorite   = react.Property.new([],            POOL) # List of favorite colors
+
+def PopupExists(): bool
+  return WinID.Get()->In(popup_list())
+enddef
 
 def Edited(): bool
   return gEdited[FgBgS.Get()]
@@ -587,6 +614,26 @@ def AltColor(): string
   else
     return GetColor(HiGrp.Get(), 'bg')
   endif
+enddef
+
+def InitProperties(
+    winID: number, pane: number, hiGrp: string
+    )
+  react.Clear(POOL)
+
+  WinID.Set(winID)
+  HiGrp.Set(empty(hiGrp) ? HiGroupUnderCursor() : hiGrp)
+  HSBColor.Set((): list<number> => libcolor.Hex2Rgb(HiGrp.Get()))
+  # These properties always have valid values, and not resetting them provides a better UX:
+  # FgBgS.Set('fg')
+  # Step.Set(1)
+  # Recent.Set([])
+
+  if !empty(gFavoritePath)
+    Favorite.Set(LoadPalette(gFavoritePath))
+  endif
+
+  SwitchPane(pane)()
 enddef
 # }}}
 
@@ -805,7 +852,7 @@ def IncrementValue(value: number, max: number): number
   endif
 enddef
 
-def DecrementValue(value: number, min: number): number
+def DecrementValue(value: number, min: number = 0): number
   const newValue = value - Step.Get()
 
   if newValue < min
@@ -837,6 +884,27 @@ def Increment(winID: number): func(): bool
       return true
     endif
 
+    if pane == HSB_PANE
+      var HSB = HSBColor.Get()
+      var [h, s, b] = HSB()
+
+      if selectedID == ID.H_SLIDER
+        h = IncrementValue(h, 359)
+      elseif selectedID == ID.S_SLIDER
+        s = IncrementValue(s, 100)
+      elseif selectedID == ID.B_SLIDER
+        b = IncrementValue(b, 100)
+      else
+        return false
+      endif
+
+      react.Transaction(() => {
+        HSBColor.Set(() => [h, s, b])
+        Color.Set(libcolor.Hsv2Hex(h, s, b))
+      })
+      return true
+    endif
+
     if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
       var gray = libcolor.Hex2Gray(Color.Get())
       gray = IncrementValue(gray, 255)
@@ -857,11 +925,11 @@ def Decrement(winID: number): func(): bool
       var [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
 
       if selectedID == ID.RED_SLIDER
-        red = DecrementValue(red, 0)
+        red = DecrementValue(red)
       elseif selectedID == ID.GREEN_SLIDER
-        green = DecrementValue(green, 0)
+        green = DecrementValue(green)
       elseif selectedID == ID.BLUE_SLIDER
-        blue = DecrementValue(blue, 0)
+        blue = DecrementValue(blue)
       else
         return false
       endif
@@ -870,9 +938,30 @@ def Decrement(winID: number): func(): bool
       return true
     endif
 
+    if pane == HSB_PANE
+      var HSB = HSBColor.Get()
+      var [h, s, b] = HSB()
+
+      if selectedID == ID.H_SLIDER
+        h = DecrementValue(h)
+      elseif selectedID == ID.S_SLIDER
+        s = DecrementValue(s)
+      elseif selectedID == ID.B_SLIDER
+        b = DecrementValue(b)
+      else
+        return false
+      endif
+
+      react.Transaction(() => {
+        HSBColor.Set(() => [h, s, b])
+        Color.Set(libcolor.Hsv2Hex(h, s, b))
+      })
+      return true
+    endif
+
     if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
       var gray = libcolor.Hex2Gray(Color.Get())
-      gray = DecrementValue(gray, 0)
+      gray = DecrementValue(gray)
       Color.Set(libcolor.Gray2Hex(gray))
       return true
     endif
@@ -916,6 +1005,7 @@ enddef
 def SelectNext(winID: number): func(): bool
   return (): bool => {
     SelectedID.Set(NextSelectable(winID, SelectedID.Get()))
+    echomsg $'[StylePicker] DEBUG SelectedID = {SelectedID.Get()} Effects = ' SelectedID.Effects()
     return true
   }
 enddef
@@ -1000,7 +1090,7 @@ def ToggleStyleAttribute(attr: string): func(): bool
 
     Style.Set(currentStyle)
     return true
-    }
+  }
 enddef
 
 def ClearColor(winID: number): func(): bool
@@ -1011,20 +1101,48 @@ def ClearColor(winID: number): func(): bool
   }
 enddef
 
-def SwitchPane(winID: number, pane: number): func(): bool
-  return () => {
-    Pane.Set(pane)
+def SwitchToRGBPane()
+  react.Transaction(() => {
+    SelectedID.Set(ID.RED_SLIDER)
+    Pane.Set(RGB_PANE)
+  })
+enddef
 
-    if pane != HELP_PANE
-      SelectedID.Set(FirstSelectable(winID))
-    endif
+def SwitchToHSBPane()
+  react.Transaction(() => {
+    SelectedID.Set(ID.H_SLIDER)
+    HSBColor.Set((): list<number> => libcolor.Hex2Hsv(Color.Get()))
+    Pane.Set(HSB_PANE)
+  })
+enddef
 
+def SwitchToGrayPane()
+  react.Transaction(() => {
+    SelectedID.Set(ID.GRAY_SLIDER)
+    Pane.Set(GRAY_PANE)
+  })
+enddef
+
+def SwitchToHelpPane()
+  Pane.Set(HELP_PANE)
+enddef
+
+def SwitchPane(pane: number): func(): bool
+  const Switch = {
+    [RGB_PANE ]: SwitchToRGBPane,
+    [HSB_PANE ]: SwitchToHSBPane,
+    [GRAY_PANE]: SwitchToGrayPane,
+    [HELP_PANE]: SwitchToHelpPane,
+  }
+
+  return (): bool => {
+    Switch[pane]()
     return true
   }
 enddef
 
-def ActionMap(winID: number): dict<func(): bool>
-  return {
+def SetActionMap(winID: number)
+  gActionMap = {
       [KEYMAP['add-to-favorite'     ]]: AddToFavorite(winID),
       [KEYMAP['bot'                 ]]: GoToBottom(winID),
       [KEYMAP['cancel'              ]]: Cancel(winID),
@@ -1034,14 +1152,14 @@ def ActionMap(winID: number): dict<func(): bool>
       [KEYMAP['down'                ]]: SelectNext(winID),
       [KEYMAP['fg<bg<sp'            ]]: FgBgSPrev(),
       [KEYMAP['fg>bg>sp'            ]]: FgBgSNext(),
-      [KEYMAP['gray-pane'           ]]: SwitchPane(winID, GRAY_PANE),
-      [KEYMAP['help'                ]]: SwitchPane(winID, HELP_PANE),
-      [KEYMAP['hsb-pane'            ]]: SwitchPane(winID, HSB_PANE),
+      [KEYMAP['gray-pane'           ]]: SwitchPane(GRAY_PANE),
+      [KEYMAP['help'                ]]: SwitchPane(HELP_PANE),
+      [KEYMAP['hsb-pane'            ]]: SwitchPane(HSB_PANE),
       [KEYMAP['increment'           ]]: Increment(winID),
       [KEYMAP['paste'               ]]: PasteColor(winID),
       [KEYMAP['pick-from-palette'   ]]: PickColor(winID),
       [KEYMAP['remove-from-palette' ]]: RemoveColor(winID),
-      [KEYMAP['rgb-pane'            ]]: SwitchPane(winID, RGB_PANE),
+      [KEYMAP['rgb-pane'            ]]: SwitchPane(RGB_PANE),
       [KEYMAP['set-color'           ]]: ChooseColor(),
       [KEYMAP['set-higroup'         ]]: ChooseHiGrp(),
       [KEYMAP['toggle-bold'         ]]: ToggleStyleAttribute('bold'),
@@ -1067,7 +1185,7 @@ const DEFAULT_SLIDER_SYMBOLS = get(g:, 'stylepicker_ascii', false)
   : [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
 
 # NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
-def Slider(id: number, name: string, value: number, selected: bool, min = 0, max = 255): RichText
+def Slider(id: number, name: string, value: number, selected: bool, max = 255, min = 0): RichText
   const gutter    = Gutter(selected)
   const width     = PopupWidth() - strchars(gutter) - 6
   const range     = max + 1 - min
@@ -1086,18 +1204,11 @@ enddef
 # View and VStack {{{
 type View = func(): list<RichText>
 
-def VStack(...views: list<View>): View
-  var stacked: list<func(): any>
-
-  for V in views
-    const VRead = react.CreateMemo(V, POOL)
-    stacked->add(VRead)
-  endfor
-
+def VStack(...views: list<any>): View
   return (): list<RichText> => {
     var text: list<RichText> = []
 
-    for V in stacked
+    for V in views
       text->extend(V())
     endfor
 
@@ -1109,9 +1220,14 @@ enddef
 def BlankView(): list<RichText>
   return [Blank()]
 enddef
+
+var BlankViewMemo: any
 # }}}
 # TitleView {{{
+var tv = 0
 def TitleView(): list<RichText>
+  ++tv
+  echomsg $'DEBUG: recalculating TitleView {tv}' expand('<stack>')
   const attrs  = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
   const width  = PopupWidth()
   const name   = HiGrp.Get()
@@ -1130,12 +1246,16 @@ def TitleView(): list<RichText>
     ->OnOff(style.strikethrough, offset + 5, 1)
   ]
 enddef
+
+var TitleViewMemo: any
 # }}}
 # StepView {{{
 def StepView(): list<RichText>
   const text = printf('Step  %02d', Step.Get())
   return [Text(text)->Label(1, 4)]
 enddef
+
+var StepViewMemo: any
 # }}}
 # ColorInfoView {{{
 def ColorInfoView(): list<RichText>
@@ -1164,14 +1284,18 @@ def ColorInfoView(): list<RichText>
       repeat(Star(), termScore)))->GuiHighlight(1, 3)->CtermHighlight(5, 3)
   ]
 enddef
+
+var ColorInfoViewMemo: any
 # }}}
 # QuotationView {{{
 def QuotationView(): list<RichText>
   return [Text(Center(Quote(), PopupWidth()))->CurrentHighlight()]
 enddef
+
+var QuotationViewMemo: any
 # }}}
-# BuildPaletteView {{{
-def SyncPaletteHighlightEffect(bufnr: number, prop: string, Palette: react.Property)
+# RecentView and FavoriteView {{{
+def SyncPaletteHighlight(bufnr: number, prop: string, Palette: react.Property)
   const prefix = $'stylePicker{prop}'
 
   react.CreateEffect(() => {
@@ -1192,8 +1316,9 @@ def SyncPaletteHighlightEffect(bufnr: number, prop: string, Palette: react.Prope
   })
 enddef
 
+var kr = 0
+
 def BuildPaletteView(
-    bufnr:       number,
     Palette:     react.Property,
     title:       string,
     prop:        string, # Prop.RECENT, Prop.FAVORITE
@@ -1202,9 +1327,9 @@ def BuildPaletteView(
     ): View
   const emptyPaletteText: list<RichText> = alwaysVisible ? [Label(Text(title)), Blank(), Blank()] : []
 
-  SyncPaletteHighlightEffect(bufnr, prop, Palette)
-
   return (): list<RichText> => {
+    ++kr
+    echomsg $'DEBUG: rebuilding {prop} palette {kr}'
     const palette: list<string> = Palette.Get()
 
     if empty(palette)
@@ -1245,6 +1370,12 @@ def BuildPaletteView(
     return paletteText
   }
 enddef
+
+const RecentView   = BuildPaletteView(Recent,   'Recent Colors',   Prop.RECENT,   ID.RECENT_COLORS,   true)
+const FavoriteView = BuildPaletteView(Favorite, 'Favorite Colors', Prop.FAVORITE, ID.FAVORITE_COLORS, false)
+
+var RecentViewMemo: any
+var FavoriteViewMemo: any
 # }}}
 
 # RGB Pane {{{
@@ -1259,20 +1390,20 @@ def RGBSliderView(): list<RichText>
   ]
 enddef
 
-def RgbPane(winID: number, RecentView: View, FavoriteView: View)
+def RgbPane(winID: number)
   const RgbView = VStack(
-    TitleView,
-    BlankView,
+    TitleViewMemo,
+    BlankViewMemo,
     RGBSliderView,
-    StepView,
-    BlankView,
-    ColorInfoView,
-    BlankView,
-    QuotationView,
-    BlankView,
-    RecentView,
-    BlankView,
-    FavoriteView,
+    StepViewMemo,
+    BlankViewMemo,
+    ColorInfoViewMemo,
+    BlankViewMemo,
+    QuotationViewMemo,
+    BlankViewMemo,
+    RecentViewMemo,
+    BlankViewMemo,
+    FavoriteViewMemo,
   )
 
   react.CreateEffect(() => {
@@ -1281,6 +1412,57 @@ def RgbPane(winID: number, RecentView: View, FavoriteView: View)
     endif
 
     popup_settext(winID, RgbView())
+    echomsg $'DEBUG: {winID} redrawn (RGB Pane)'
+    ++gNumRedraws
+
+    if DEBUG && gNumRedraws > 1
+      Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
+    endif
+  })
+enddef
+# }}}
+# HSB Pane {{{
+var ii = 0
+def HSBSliderView(): list<RichText>
+  if Pane.Get() != HSB_PANE
+    return []
+  endif
+
+  ++ii
+  echomsg $'DEBUG: recomputing HSBSliderView ({ii})'
+  const HSB = HSBColor.Get()
+  const [h, s, b] = HSB()
+  const selectedID = SelectedID.Get()
+
+  return [
+    Slider(ID.H_SLIDER, 'H', h, selectedID == ID.H_SLIDER, 359),
+    Slider(ID.S_SLIDER, 'S', s, selectedID == ID.S_SLIDER, 100),
+    Slider(ID.B_SLIDER, 'B', b, selectedID == ID.B_SLIDER, 100),
+  ]
+enddef
+
+def HsbPane(winID: number)
+  const HsbView = VStack(
+    TitleViewMemo,
+    BlankViewMemo,
+    HSBSliderView,
+    StepViewMemo,
+    BlankViewMemo,
+    ColorInfoViewMemo,
+    BlankViewMemo,
+    QuotationViewMemo,
+    BlankViewMemo,
+    RecentViewMemo,
+    BlankViewMemo,
+    FavoriteViewMemo,
+  )
+
+  react.CreateEffect(() => {
+    if Pane.Get() != HSB_PANE
+      return
+    endif
+
+    popup_settext(winID, HsbView())
     ++gNumRedraws
 
     if DEBUG && gNumRedraws > 1
@@ -1307,20 +1489,20 @@ def GraySliderView(): list<RichText>
   ]
 enddef
 
-def GrayscalePane(winID: number, RecentView: View, FavoriteView: View)
+def GrayscalePane(winID: number)
   const GrayscaleView = VStack(
-   TitleView,
-    BlankView,
+    TitleViewMemo,
+    BlankViewMemo,
     GraySliderView,
-    StepView,
-    BlankView,
-    ColorInfoView,
-    BlankView,
-    QuotationView,
-    BlankView,
-    RecentView,
-    BlankView,
-    FavoriteView,
+    StepViewMemo,
+    BlankViewMemo,
+    ColorInfoViewMemo,
+    BlankViewMemo,
+    QuotationViewMemo,
+    BlankViewMemo,
+    RecentViewMemo,
+    BlankViewMemo,
+    FavoriteViewMemo,
   )
 
   react.CreateEffect(() => {
@@ -1337,7 +1519,6 @@ def GrayscalePane(winID: number, RecentView: View, FavoriteView: View)
   })
 enddef
 # }}}
-
 # Help Pane {{{
 def HelpPane(winID: number)
   var s = [
@@ -1417,6 +1598,28 @@ def HelpPane(winID: number)
 enddef
 # }}}
 
+def InitEffects(winID: number, bufnr: number)
+  SyncPaletteHighlight(bufnr, Prop.RECENT,   Recent)
+  SyncPaletteHighlight(bufnr, Prop.FAVORITE, Favorite)
+
+  react.CreateEffect(() => {
+    prop_type_change(Prop.CURRENT_HIGHLIGHT, {bufnr: bufnr, highlight: HiGrp.Get()})
+  })
+
+  BlankViewMemo     = react.CreateMemo(BlankView,     POOL)
+  TitleViewMemo     = react.CreateMemo(TitleView,     POOL)
+  StepViewMemo      = react.CreateMemo(StepView,      POOL)
+  ColorInfoViewMemo = react.CreateMemo(ColorInfoView, POOL)
+  QuotationViewMemo = react.CreateMemo(QuotationView, POOL)
+  RecentViewMemo    = react.CreateMemo(RecentView,    POOL)
+  FavoriteViewMemo  = react.CreateMemo(FavoriteView,  POOL)
+
+  RgbPane(winID)
+  HsbPane(winID)
+  GrayscalePane(winID)
+  HelpPane(winID)
+enddef
+
 # Callbacks {{{
 def ClosedCallback(winID: number, result: any = '')
   if exists('#stylepicker')
@@ -1424,22 +1627,10 @@ def ClosedCallback(winID: number, result: any = '')
     augroup! stylepicker
   endif
 
-  react.Clear(POOL)
-
   gX = popup_getoptions(winID).col
   gY = popup_getoptions(winID).line
 enddef
 # }}}
-
-def SetHiGroupUnderCursor()
-  var hiGroup = HiGroupUnderCursor()
-
-  if empty(hiGroup)
-    hiGroup = 'Normal'
-  endif
-
-  HiGrp.Set(hiGroup)
-enddef
 
 def HandleDigit(winID: number, digit: number): bool
   const isSlider = IsSlider(winID, SelectedID.Get())
@@ -1475,7 +1666,7 @@ def ProcessKeyPress(winID: number, key: string): bool
 
   gNumRedraws = 0
 
-  if Pane.Get() == HELP_PANE && key !~ '\m[RGB?xX]'
+  if Pane.Get() == HELP_PANE && key !~ '\m[RGH?xX]'
     return false
   endif
 
@@ -1492,27 +1683,10 @@ enddef
 
 def StylePicker(hiGroup: string = '', x = gX, y = gY)
   DEBUG = get(g:, 'stylepicker_debug', false)
-  react.Reinit() # TODO: REMOVE ME
-  react.Clear(POOL) # Clear all effects
-  ResetHighlight()
+
   gEdited = {fg: false, bg: false, sp: false}
   gNumRedraws = 0
   gFavoritePath = get(g:, 'stylepicker_favorite_path', '')
-
-  if !empty(gFavoritePath)
-    Favorite.Set(LoadPalette(gFavoritePath))
-  endif
-
-  if empty(hiGroup)
-    SetHiGroupUnderCursor()
-
-    augroup stylepicker
-      autocmd!
-      autocmd CursorMoved * SetHiGroupUnderCursor()
-    augroup END
-  else
-    HiGrp.Set(hiGroup)
-  endif
 
   const winID = popup_create('', {
     border:      [1, 1, 1, 1],
@@ -1538,60 +1712,34 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
     wrap:        0,
     zindex:      200,
   })
-
   const bufnr = winbufnr(winID)
 
   setbufvar(bufnr, '&tabstop', &tabstop)  # Inherit global tabstop value
 
+  react.Reinit() # TODO: REMOVE ME
+  ResetHighlight()
   SetPropertyTypes(bufnr)
+  InitProperties(winID, RGB_PANE, hiGroup)
+  InitEffects(winID, bufnr)
+  SetActionMap(winID)
 
-  # Shared views
-  const RecentView   = BuildPaletteView(bufnr, Recent,   'Recent Colors',   Prop.RECENT,   ID.RECENT_COLORS,   true)
-  const FavoriteView = BuildPaletteView(bufnr, Favorite, 'Favorite Colors', Prop.FAVORITE, ID.FAVORITE_COLORS, false)
-
-  Pane.Set(RGB_PANE)
-  SelectedID.Set(ID.RED_SLIDER)
-
-  RgbPane(winID, RecentView, FavoriteView)
-  GrayscalePane(winID, RecentView, FavoriteView)
-  HelpPane(winID)
-
-  react.CreateEffect(() => {
-    prop_type_change(Prop.CURRENT_HIGHLIGHT, {bufnr: bufnr, highlight: HiGrp.Get()})
-  })
-
-  gActionMap = ActionMap(winID)
-  gStylePickerID = winID
+  if empty(hiGroup)
+    augroup stylepicker
+      autocmd!
+      autocmd CursorMoved * HiGrp.Set(HiGroupUnderCursor())
+    augroup END
+  endif
 
   popup_show(winID)
 enddef
 
 # Public interface {{{
 export def Open(hiGroup: string = '')
-  const stylePickerIsOpened = gStylePickerID->In(popup_list())
-
-  if !stylePickerIsOpened
-    StylePicker(hiGroup)
-    return
-  endif
-
-  if empty(hiGroup)
-    SetHiGroupUnderCursor()
-
-    augroup stylepicker
-      autocmd!
-      autocmd CursorMoved * SetHiGroupUnderCursor()
-    augroup END
+  if PopupExists()
+    # TODO
+    popup_show(WinID.Get())
   else
-    HiGrp.Set(hiGroup)
+    StylePicker(hiGroup)
   endif
-
-  # Trigger the highlighting effect, because highlight groups are deleted
-  # when the style picker is hidden.
-  # react.Transaction(() => {
-  #   Recent.Set(Recent.Get())
-  #   Favorite.Set(Favorite.Get())
-  # })
-  popup_show(gStylePickerID)
 enddef
 # }}}
