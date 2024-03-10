@@ -69,6 +69,7 @@ var sRecentCapacity:  number       # Maximum number of recent colors
 var sStar:            string       # Symbol for stars (must be a single character)
 var sStepDelay:       float        # Maximum delay between two consecutive key presses
 var sKeymap:          dict<string> # Associates a key to each action
+var sZ:               number       # The popup's z-index
 
 def GetOptions()
   sASCII           = get(g:, 'stylepicker_ascii', false)
@@ -80,6 +81,7 @@ def GetOptions()
   sRecentCapacity  = get(g:, 'stylepicker_recent', 20)
   sStar            = get(g:, 'stylepicker_star', '*')
   sStepDelay       = get(g:, 'stylepicker_step_delay', 1.0)
+  sZ               = get(g:, 'stylepicker_zindex', 100)
   sKeymap          = extend({
     'add-to-favorite':      "A",
     'bot':                  ">",
@@ -1714,7 +1716,7 @@ def StylePicker(
     hiGroup:         string,
     xPos:            number,
     yPos:            number,
-    zIndex:          number       = 100,
+    zIndex:          number       = sZ,
     background:      string       = sBackground,
     border:          list<string> = sBorder,
     minWidth:        number       = sPopupWidth,
