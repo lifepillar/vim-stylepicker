@@ -31,24 +31,22 @@ export def Msg(text: string, error = false)
   echohl None
 enddef
 
-export def ColorMode(): string
-  if has('gui_running') || (has('termguicolors') && &termguicolors)
-    return 'gui'
-  else
-    return 'cterm'
-  endif
+export def ErrMsg(text: string)
+  Msg(text, true)
 enddef
 
-export def StyleMode(): string
-  if has('gui_running')
-    return 'gui'
-  else
-    return 'cterm'
-  endif
+export def Center(text: string, width: number): string
+  const lPad = repeat(' ', (width + 1 - strwidth(text)) / 2)
+  const rPad = repeat(' ', (width - strwidth(text)) / 2)
+  return $'{lPad}{text}{rPad}'
 enddef
 
-export def Attr(mode: string, attr: string): string
-  return mode .. (attr == 'sp' && mode == 'cterm' ? 'ul' : attr)
+export def In(v: any, items: list<any>): bool
+  return index(items, v) != -1
+enddef
+
+export def NotIn(v: any, items: list<any>): bool
+  return index(items, v) == -1
 enddef
 
 export def Int(cond: bool): number

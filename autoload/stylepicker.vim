@@ -1,124 +1,189 @@
 vim9script
 
-# TODO:
-#
 # - Search for FIXME issues
 # - Search for TODO issues
-# - Other panes (HSV, Gray)
 # - Hooks
 # - Mouse support
 
+# Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
   export def Open(hiGroup: string = null_string)
     echomsg 'Stylepicker requires Vim 9.1 compiled with popupwin and textprop.'
   enddef
   finish
 endif
-
+# }}}
+# Imports {{{
 import 'libcolor.vim'        as libcolor
 import 'libreactive.vim'     as react
 import autoload './util.vim' as util
+# }}}
+# Constants and types {{{
+const Center            = util.Center
+const ErrMsg            = util.ErrMsg
+const In                = util.In
+const Int               = util.Int
+const Msg               = util.Msg
+const NotIn             = util.NotIn
+const Quote             = util.Quote
 
-type Reader = func(): any
-type Writer = func(any)
+const kRGBPane          = 1
+const kHSBPane          = 2
+const kGrayPane         = 3
+const kHelpPane         = 99
+const kNumColorsPerLine = 10
+const kPrettyKey        = {
+  "\<left>":    "←",
+  "\<right>":   "→",
+  "\<up>":      "↑",
+  "\<down>":    "↓",
+  "\<tab>":     "↳",
+  "\<s-tab>":   "⇧-↳",
+  "\<enter>":   "↲",
+  "\<s-enter>": "⇧-↲",
+}
 
-const ColorMode           = util.ColorMode
-const StyleMode           = util.StyleMode
-const Int                 = util.Int
-const Msg                 = util.Msg
-const Quote               = util.Quote
+# IDs for selectable items
+const kLabels           = 1
+const kRedSlider        = 128
+const kGreenSlider      = 129
+const kBlueSlider       = 130
+const kHueSlider        = 131
+const kSaturationSlider = 132
+const kBrightnessSlider = 133
+const kGrayscaleSlider  = 134
+const kRecentColors     = 1024 # Each recent color line gets a +1 id
+const kFavoriteColors   = 8192 # Each favorite color line gets a +1 id
 
-const NUM_COLORS_PER_LINE = 10
-const RGB_PANE            = 0
-const HSB_PANE            = 1
-const GRAY_PANE           = 2
-const HELP_PANE           = 99
+type Action = func(): bool
+# }}}
+# Internal state {{{
+# Options {{{
+var sASCII:           bool         # Whether the style picker's text should be limited to ASCII
+var sAllowKeyMapping: bool         # Allow for key mapping in the popup?
+var sBackground:      string       # Highlight group for the popup's background color
+var sBorder:          list<string> # Popup border
+var sFavoritePath:    string       # Path to saved favorite colors
+var sMarker:          string       # String for the marker of selected item
+var sRecentCapacity:  number       # Maximum number of recent colors
+var sStar:            string       # Symbol for stars (must be a single character)
+var sStepDelay:       float        # Maximum delay between two consecutive key presses
+var sKeymap:          dict<string> # Associates a key to each action
 
-# Internal state
-var DEBUG                 = false
-var gStylePickerID        = -1 # The style picker's window ID
-var gX                    = 0
-var gY                    = 0
-var gEdited               = {fg: false, bg: false, sp: false} # Has the color been edited?
-var gFavoritePath         = ''
-var gTimeLastDigitPressed = reltime()
-var gRecentCapacity       = get(g:, 'stylepicker_recent', 20)
-var gNumRedraws           = 0 # For debugging
-var gActionMap: dict<func(): bool>
-
-
-# Helper functions {{{
-def In(v: any, items: list<any>): bool
-  return index(items, v) != -1
+def GetOptions()
+  sASCII           = get(g:, 'stylepicker_ascii', false)
+  sAllowKeyMapping = get(g:, 'stylepicker_key_mapping', true)
+  sBackground      = get(g:, 'stylepicker_background', 'Normal')
+  sBorder          = get(g:, 'stylepicker_borderchars', ['─', '│', '─', '│', '┌', '┐', '┘', '└'])
+  sFavoritePath    = get(g:, 'stylepicker_favorite_path', '')
+  sMarker          = get(g:, 'stylepicker_marker', '❯❯ ')
+  sRecentCapacity  = get(g:, 'stylepicker_recent', 20)
+  sStar            = get(g:, 'stylepicker_star', '*')
+  sStepDelay       = get(g:, 'stylepicker_step_delay', 1.0)
+  sKeymap          = extend({
+    'add-to-favorite':      "A",
+    'bot':                  ">",
+    'cancel':               "X",
+    'clear-color':          "Z",
+    'close':                "x",
+    'decrement':            "\<left>",
+    'down':                 "\<down>",
+    'fg<bg<sp':             "\<s-tab>",
+    'fg>bg>sp':             "\<tab>",
+    'gray-pane':            "G",
+    'help':                 "?",
+    'hsb-pane':             "H",
+    'increment':            "\<right>",
+    'paste':                "P",
+    'pick-from-palette':    "\<enter>",
+    'remove-from-palette':  "D",
+    'rgb-pane':             "R",
+    'set-color':            "E",
+    'set-higroup':          "N",
+    'toggle-bold':          "B",
+    'toggle-italic':        "I",
+    'toggle-reverse':       "V",
+    'toggle-standout':      "S",
+    'toggle-strikethrough': "K",
+    'toggle-tracking':      "T",
+    'toggle-undercurl':     "~",
+    'toggle-underdashed':   "-",
+    'toggle-underdotted':   ".",
+    'toggle-underdouble':   "=",
+    'toggle-underline':     "U",
+    'top':                  "<",
+    'up':                   "\<up>",
+    'yank':                 "Y",
+  }, get(g:, 'stylepicker_keys', {}), 'force')
 enddef
 
-def NotIn(v: any, items: list<any>): bool
-  return index(items, v) == -1
+def DisabledKeys(): bool
+  return get(g:, 'stylepicker_disable_keys', false)
 enddef
+# }}}
 
-def Borderchars(): list<string>
-  return get(
-    g:, 'stylepicker_borderchars', ['─', '│', '─', '│', '┌', '┐', '┘', '└']
-  )
+var sActionMap:            dict<Action>  # Mapping from keys to actions
+var sColorMode:            string        # Prefix for color attributes ('gui' or 'cterm')
+var sDefaultSliderSymbols: list<string>  # List of 9 default symbols to draw the sliders
+var sGutter:               string        # Gutter of unselected items
+var sGutterWidth:          number        # The gutter's width
+var sPopupWidth:           number        # Minimum width of the style picker
+var sSliderByID:           dict<any>     # Map from slider IDs to slider objects
+var sStyleMode:            string        # Key for style attributes ('gui' or 'cterm')
+var sTimeLastDigitPressed: list<number>  # Time since last digit key was pressed
+var sX:                    number = 0    # Horizontal position of the style picker
+var sY:                    number = 0    # Vertical position of the style picker
+var sWinID:                number = -1   # ID of the currently opened style picker
+
+def InitInternalState()
+  GetOptions()
+  sColorMode            = (has('gui_running') || (has('termguicolors') && &termguicolors)) ? 'gui' : 'cterm'
+  sGutter               = repeat(' ', strdisplaywidth(sMarker, 0))
+  sGutterWidth          = strchars(sGutter)
+  sPopupWidth           = max([39 + strdisplaywidth(sMarker), 42])
+  sSliderByID           = {}
+  sStyleMode            = has('gui_running') ? 'gui' : 'cterm'
+  sTimeLastDigitPressed = reltime()
+  sDefaultSliderSymbols = sASCII
+    ? [" ", ".", ":", "!", "|", "/", "-", "=", "#"]
+    : [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
 enddef
-
-def Marker(): string
-  return get(g:, 'stylepicker_marker', '❯❯ ')
-enddef
-
-def Star(): string
-  return get(
-    g:, 'stylepicker_star', get(g:, 'stylepicker_ascii', false) ? '*' : '★'
-  )
-enddef
-
+# }}}
+# Helper Functions {{{
 def Gutter(selected: bool): string
-  const marker = Marker()
+  return selected ? sMarker : sGutter
+enddef
 
-  if selected
-    return marker
-  else
-    return repeat(' ', strdisplaywidth(marker, 0))
+def SpecialSuffix(attr: string, mode: string): string
+  if attr == 'sp' && mode == 'cterm'
+    return 'ul'
   endif
+  return attr
 enddef
 
-def PopupWidth(): number
-  return max([39 + strdisplaywidth(Marker()), 42])
+def Notification(winID: number, text: string, duration = 2000, width = sPopupWidth, border = sBorder)
+  popup_notification(Center(text, width), {
+    pos:         'topleft',
+    line:        get(popup_getoptions(winID), 'line', 1),
+    col:         get(popup_getoptions(winID), 'col', 1),
+    highlight:   'Normal',
+    time:        duration,
+    moved:       'any',
+    mousemoved:  'any',
+    minwidth:    width,
+    maxwidth:    width,
+    borderchars: border,
+  })
 enddef
 
-def Center(text: string, width: number = PopupWidth()): string
-  const lPad = repeat(' ', (width + 1 - strwidth(text)) / 2)
-  const rPad = repeat(' ', (width - strwidth(text)) / 2)
-  return $'{lPad}{text}{rPad}'
-enddef
-
-def Notification(winID: number, text: string, duration = 2000)
-  if get(g:, 'stylepicker_notifications', true)
-    const width = PopupWidth()
-
-    popup_notification(Center(text), {
-      pos:         'topleft',
-      line:        get(popup_getoptions(winID), 'line', 1),
-      col:         get(popup_getoptions(winID), 'col', 1),
-      highlight:   'Normal',
-      time:        duration,
-      moved:       'any',
-      mousemoved:  'any',
-      minwidth:    width,
-      maxwidth:    width,
-      borderchars: Borderchars(),
-    })
-  endif
-enddef
-
-def Warn(text: string, duration = 2000)
-  popup_notification(Center(text), {
+def Warn(text: string, duration = 2000, border = sBorder, width = sPopupWidth)
+  popup_notification(Center(text, width), {
     pos:         'topleft',
     highlight:   'Normal',
     time:        duration,
     moved:       'any',
     mousemoved:  'any',
-    borderchars: Borderchars(),
+    borderchars: border,
   })
 enddef
 
@@ -132,6 +197,8 @@ def ComputeScore(hexCol1: string, hexCol2: string): number
   return Int(cr >= 3.0) + Int(cr >= 4.5) + Int(cr >= 7.0) + Int(cd >= 500) + Int(bd >= 125)
 enddef
 
+# Return the name of the highlight group under the cursor. Return 'Normal' if
+# the highlight group cannot be determined.
 def HiGroupUnderCursor(): string
   var hiGrp: string = synIDattr(synIDtrans(synID(line('.'), col('.'), true)), 'name')
 
@@ -142,16 +209,20 @@ def HiGroupUnderCursor(): string
   return hiGrp
 enddef
 
-# When mode is 'gui', return either a hex value or an empty string
-# When mode is 'cterm', return either a numeric string or an empty string
+# When mode is 'gui', return either a hex value or 'NONE'.
+# When mode is 'cterm', return either a numeric string or 'NONE'.
 def HiGroupColorAttr(hiGroup: string, fgBgS: string, mode: string): string
-  var value = synIDattr(synIDtrans(hlID(hiGroup)), $'{fgBgS}#', mode)
+  var attr = SpecialSuffix(fgBgS, mode)
+  var value = synIDattr(synIDtrans(hlID(hiGroup)), $'{attr}#', mode)
+
+  if empty(value)
+    return 'NONE'
+  endif
 
   if mode == 'gui'
-    if !empty(value) && value[0] != '#' # In terminals, HiGroupColorAttr() may return a GUI color name
+    if value[0] != '#' # In terminals, HiGroupColorAttr() may return a GUI color name
       value = libcolor.RgbName2Hex(value, '')
     endif
-
     return value
   endif
 
@@ -161,7 +232,7 @@ def HiGroupColorAttr(hiGroup: string, fgBgS: string, mode: string): string
     if num >= 0
       value = string(num)
     else
-      value = ''
+      value = 'NONE'
     endif
   endif
 
@@ -177,17 +248,18 @@ def UltimateFallbackColor(what: string): string
 enddef
 
 # Try hard to determine a sensible hex value for the requested color attribute
-def GetColor(hiGroup: string, what: string): string
+def GetHighlightColor(hiGroup: string, what: string, colorMode = sColorMode): string
+  # Always prefer the GUI definition if it exists
   var value = HiGroupColorAttr(hiGroup, what, 'gui')
 
-  if !empty(value) # Fast path
+  if value != 'NONE' # Fast path
     return value
   endif
 
-  if ColorMode() == 'cterm'
-    const ctermValue = HiGroupColorAttr(hiGroup, what == 'sp' ? 'ul' : what, 'cterm')
+  if colorMode == 'cterm'
+    const ctermValue = HiGroupColorAttr(hiGroup, SpecialSuffix(what, 'cterm'), 'cterm')
 
-    if !empty(ctermValue)
+    if ctermValue != 'NONE'
       const hex = libcolor.ColorNumber2Hex(str2nr(ctermValue))
       execute 'hi' hiGroup $'gui{what}={hex}'
       return hex
@@ -195,76 +267,82 @@ def GetColor(hiGroup: string, what: string): string
   endif
 
   if what == 'sp'
-    return GetColor(hiGroup, 'fg')
+    return GetHighlightColor(hiGroup, 'fg')
   elseif hiGroup == 'Normal'
     return UltimateFallbackColor(what)
   endif
 
-  return GetColor('Normal', what)
+  return GetHighlightColor('Normal', what)
+enddef
+
+# Return the 'opposite' color of the current color attribute. That is the
+# background color if the input color attribute is foreground; otherwise, it
+# is the foreground color.
+def AltColor(hiGrp: string, fgBgS: string): string
+  if fgBgS == 'bg'
+    return GetHighlightColor(hiGrp, 'fg')
+  else
+    return GetHighlightColor(hiGrp, 'bg')
+  endif
 enddef
 
 # Initialize the highlight groups used by the style picker
-def ResetHighlight()
-  const mode         = ColorMode()
+def InitHighlight(mode = sColorMode, style = sStyleMode)
   const warnColor    = HiGroupColorAttr('WarningMsg', 'fg', mode)
   const labelColor   = HiGroupColorAttr('Label',      'fg', mode)
   const commentColor = HiGroupColorAttr('Comment',    'fg', mode)
 
-  execute $'hi stylePickerOn            {mode}fg={labelColor}   term=bold             {mode}=bold'
-  execute $'hi stylePickerOff           {mode}fg={commentColor} term=NONE             {mode}=NONE'
-  execute $'hi stylePickerWarning       {mode}fg={warnColor}                          {mode}=bold'
-  execute $'hi stylePickerBold          {mode}fg={labelColor}   term=bold             {mode}=bold'
-  execute $'hi stylePickerItalic        {mode}fg={labelColor}   term=bold,italic      {mode}=bold,italic'
-  execute $'hi stylePickerUnderline     {mode}fg={labelColor}   term=bold,underline   {mode}=bold,underline'
-  execute $'hi stylePickerUndercurl     {mode}fg={labelColor}   term=bold,undercurl   {mode}=bold,undercurl'
-  execute $'hi stylePickerUnderdouble   {mode}fg={labelColor}   term=bold,underdouble {mode}=bold,underdouble'
-  execute $'hi stylePickerUnderdotted   {mode}fg={labelColor}   term=bold,underdotted {mode}=bold,underdotted'
-  execute $'hi stylePickerUnderdashed   {mode}fg={labelColor}   term=bold,underdashed {mode}=bold,underdashed'
-  execute $'hi stylePickerStandout      {mode}fg={labelColor}   term=bold,standout    {mode}=bold,standout'
-  execute $'hi stylePickerInverse       {mode}fg={labelColor}   term=bold,inverse     {mode}=bold,inverse'
-  execute $'hi stylePickerStrikethrough {mode}fg={labelColor}   term=bold,inverse     {mode}=bold,inverse'
+  execute $'hi stylePickerOn            {mode}fg={labelColor}   {style}=bold              term=bold'
+  execute $'hi stylePickerOff           {mode}fg={commentColor} {style}=NONE              term=NONE'
+  execute $'hi stylePickerWarning       {mode}fg={warnColor}    {style}=bold              term=bold'
+  execute $'hi stylePickerBold          {mode}fg={labelColor}   {style}=bold              term=bold'
+  execute $'hi stylePickerItalic        {mode}fg={labelColor}   {style}=bold,italic       term=bold,italic'
+  execute $'hi stylePickerUnderline     {mode}fg={labelColor}   {style}=bold,underline    term=bold,underline'
+  execute $'hi stylePickerUndercurl     {mode}fg={labelColor}   {style}=bold,undercurl    term=bold,undercurl'
+  execute $'hi stylePickerUnderdouble   {mode}fg={labelColor}   {style}=bold,underdouble  term=bold,underdouble'
+  execute $'hi stylePickerUnderdotted   {mode}fg={labelColor}   {style}=bold,underdotted  term=bold,underdotted'
+  execute $'hi stylePickerUnderdashed   {mode}fg={labelColor}   {style}=bold,underdashed  term=bold,underdashed'
+  execute $'hi stylePickerStandout      {mode}fg={labelColor}   {style}=bold,standout     term=bold,standout'
+  execute $'hi stylePickerInverse       {mode}fg={labelColor}   {style}=bold,inverse      term=bold,inverse'
+  execute $'hi stylePickerStrikethrough {mode}fg={labelColor}   {style}=bold,inverse      term=bold,inverse'
+
   hi! stylePickerGray000 guibg=#000000 ctermbg=16
   hi! stylePickerGray025 guibg=#404040 ctermbg=238
   hi! stylePickerGray050 guibg=#7f7f7f ctermbg=244
   hi! stylePickerGray075 guibg=#bfbfbf ctermbg=250
   hi! stylePickerGray100 guibg=#ffffff ctermbg=231
+
   hi clear stylePickerGuiColor
   hi clear stylePickerTermColor
 enddef
 
 def LoadPalette(loadPath: string): list<string>
-  if empty(loadPath)
-    return []
-  endif
-
   var palette: list<string>
 
   try
     palette = readfile(loadPath)
   catch /.*/
-    Msg($'Could not load favorite colors: {v:exception}', true)
+    ErrMsg($'Could not load favorite colors: {v:exception}')
     palette = []
   endtry
 
-  filter(palette, (_, v) => v =~ '\m^#[A-Fa-f0-9]\{6}$')
+  filter(palette, (_, v) => v =~ '\m^#[A-Fa-f0-9]\{6}$')  # TODO: improve parsing
 
   return palette
 enddef
 
 def SavePalette(palette: list<string>, savePath: string)
-  if empty(savePath)
-    return
-  endif
-
   try
     if writefile(palette, savePath, 's') < 0
-      Msg($'Failed to write {savePath}', true)
+      ErrMsg($'Failed to write {savePath}')
     endif
   catch /.*/
-    Msg($'Could not persist favorite colors: {v:exception}')
+    ErrMsg($'Could not persist favorite colors: {v:exception}')
   endtry
 enddef
 
+# Prompt the user to enter a hex value for a color.
+# Return an empty string if the input is invalid.
 def ChooseGuiColor(): string
   var newCol = input('New color: #', '')
   echo "\r"
@@ -282,6 +360,8 @@ def ChooseGuiColor(): string
   return ''
 enddef
 
+# Prompt the user to enter a numeric value for a terminal color and return the
+# value as a string. Return an empty string if the input is invalid.
 def ChooseTermColor(): string
   var newCol = input('New terminal color [16-255]: ', '')
   echo "\r"
@@ -294,279 +374,318 @@ def ChooseTermColor(): string
   return ''
 enddef
 # }}}
+# Text with Properties (:help text-properties) {{{
+type TextPropertyType = dict<any>
+type TextProperty     = dict<any>
 
-# Text with Properties {{{
-class Prop
-  static const NORMAL            = '_norm' # Normal text
-  static const ON                = '_on__' # Property for 'enabled' stuff
-  static const OFF               = '_off_' # Property for 'disabled' stuff
-  static const SELECTABLE        = '_sel_' # Mark line as an item that can be selected
-  static const LABEL             = '_labe' # Mark line as a label
-  static const SLIDER            = '_leve' # Mark line as a level bar (slider)
-  static const RECENT            = '_mru_' # Mark line as a 'recent colors' line
-  static const FAVORITE          = '_fav_' # Mark line as a 'favorite colors' line
-  static const CURRENT_HIGHLIGHT = '_curr' # To highlight text with the currently selected highglight group
-  static const WARNING           = '_warn' # Highlight for warning symbols
-  static const TITLE             = '_titl' # Highlight for title section
-  static const GUI_HIGHLIGHT     = '_gcol' # Highlight for the current GUI color
-  static const CTERM_HIGHLIGHT   = '_tcol' # Highlight for the current cterm color
-  static const BOLD              = '_bold' # Highlight for bold attribute
-  static const ITALIC            = '_ital' # Highlight for italic attribute
-  static const UNDERLINE         = '_ulin' # Highlight for underline attribute
-  static const UNDERCURL         = '_curl' # Highlight for undercurl attribute
-  static const STANDOUT          = '_sout' # Highlight for standout attribute
-  static const INVERSE           = '_invr' # Highlight for inverse attribute
-  static const STRIKETHROUGH     = '_strk' # Highlight for strikethrough attribute
-  static const GRAY              = '_gray' # Grayscale blocks
-  static const GRAY000           = '_g000' # Grayscale blocks
-  static const GRAY025           = '_g025' # Grayscale blocks
-  static const GRAY050           = '_g050' # Grayscale blocks
-  static const GRAY075           = '_g075' # Grayscale blocks
-  static const GRAY100           = '_g100' # Grayscale blocks
-endclass
+const kPropTypeNormal           = '_norm' # Normal text
+const kPropTypeOn               = '_on__' # Property for 'enabled' stuff
+const kPropTypeOff              = '_off_' # Property for 'disabled' stuff
+const kPropTypeSelectable       = '_slct' # Mark line as an item that can be selected
+const kPropTypeLabel            = '_labl' # Mark line as a label
+const kPropTypeSlider           = '_levl' # Mark line as a level bar (slider)
+const kPropTypeRecent           = '_mru_' # Mark line as a 'recent colors' line
+const kPropTypeFavorite         = '_fav_' # Mark line as a 'favorite colors' line
+const kPropTypeCurrentHighlight = '_curh' # To highlight text with the currently selected highglight group
+const kPropTypeWarning          = '_warn' # Highlight for warning symbols
+const kPropTypeTitle            = '_titl' # Highlight for title section
+const kPropTypeGuiHighlight     = '_gcol' # Highlight for the current GUI color
+const kPropTypeCtermHighlight   = '_tcol' # Highlight for the current cterm color
+const kPropTypeBold             = '_bold' # Highlight for bold attribute
+const kPropTypeItalic           = '_ital' # Highlight for italic attribute
+const kPropTypeUnderline        = '_ulin' # Highlight for underline attribute
+const kPropTypeUndercurl        = '_curl' # Highlight for undercurl attribute
+const kPropTypeStandout         = '_stnd' # Highlight for standout attribute
+const kPropTypeInverse          = '_invr' # Highlight for inverse attribute
+const kPropTypeStrikethrough    = '_strk' # Highlight for strikethrough attribute
+const kPropTypeGray             = '_gray' # Grayscale blocks
+const kPropTypeGray000          = '_g000' # Grayscale blocks
+const kPropTypeGray025          = '_g025' # Grayscale blocks
+const kPropTypeGray050          = '_g050' # Grayscale blocks
+const kPropTypeGray075          = '_g075' # Grayscale blocks
+const kPropTypeGray100          = '_g100' # Grayscale blocks
 
-# IDs for selectable items
-class ID
-  static const RED_SLIDER      = 128
-  static const GREEN_SLIDER    = 129
-  static const BLUE_SLIDER     = 130
-  static const H_SLIDER        = 132
-  static const S_SLIDER        = 133
-  static const B_SLIDER        = 134
-  static const GRAY_SLIDER     = 256
-  static const RECENT_COLORS   = 1024 # Each recent color line gets a +1 id
-  static const FAVORITE_COLORS = 8192 # Each favorite color line gets a +1 id
-endclass
-
-type TextProperty = dict<any> # See :help text-properties
-type RichText     = dict<any> # {text: '...', props: [textProp1, ..., textPropN]}
-
-def PropertyTypes(bufnr: number): dict<dict<any>>
-  return {
-    [Prop.NORMAL]:            {bufnr: bufnr, highlight: 'Normal'                   },
-    [Prop.ON]:                {bufnr: bufnr, highlight: 'stylePickerOn'            },
-    [Prop.OFF]:               {bufnr: bufnr, highlight: 'stylePickerOff'           },
-    [Prop.SELECTABLE]:        {bufnr: bufnr                                        },
-    [Prop.LABEL]:             {bufnr: bufnr, highlight: 'Label'                    },
-    [Prop.SLIDER]:            {bufnr: bufnr                                        },
-    [Prop.RECENT]:            {bufnr: bufnr                                        },
-    [Prop.FAVORITE]:          {bufnr: bufnr                                        },
-    [Prop.CURRENT_HIGHLIGHT]: {bufnr: bufnr                                        },
-    [Prop.WARNING]:           {bufnr: bufnr, highlight: 'stylePickerWarning'       },
-    [Prop.TITLE]:             {bufnr: bufnr, highlight: 'Title'                    },
-    [Prop.GUI_HIGHLIGHT]:     {bufnr: bufnr, highlight: 'stylePickerGuiColor'      },
-    [Prop.CTERM_HIGHLIGHT]:   {bufnr: bufnr, highlight: 'stylePickerTermColor'     },
-    [Prop.BOLD]:              {bufnr: bufnr, highlight: 'stylePickerBold'          },
-    [Prop.ITALIC]:            {bufnr: bufnr, highlight: 'stylePickerItalic'        },
-    [Prop.UNDERLINE]:         {bufnr: bufnr, highlight: 'stylePickerUnderline'     },
-    [Prop.UNDERCURL]:         {bufnr: bufnr, highlight: 'stylePickerUndercurl'     },
-    [Prop.STANDOUT]:          {bufnr: bufnr, highlight: 'stylePickerStandout'      },
-    [Prop.INVERSE]:           {bufnr: bufnr, highlight: 'stylePickerInverse'       },
-    [Prop.STRIKETHROUGH]:     {bufnr: bufnr, highlight: 'stylePickerStrikethrough' },
-    [Prop.GRAY]:              {bufnr: bufnr                                        },
-    [Prop.GRAY000]:           {bufnr: bufnr, highlight: 'stylePickerGray000'       },
-    [Prop.GRAY025]:           {bufnr: bufnr, highlight: 'stylePickerGray025'       },
-    [Prop.GRAY050]:           {bufnr: bufnr, highlight: 'stylePickerGray050'       },
-    [Prop.GRAY075]:           {bufnr: bufnr, highlight: 'stylePickerGray075'       },
-    [Prop.GRAY100]:           {bufnr: bufnr, highlight: 'stylePickerGray100'       },
+# Define the property types for the style picker buffer
+def InitTextPropertyTypes(bufnr: number)
+  const propTypes = {
+    [kPropTypeNormal          ]: {bufnr: bufnr, highlight: 'Normal'                  },
+    [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'           },
+    [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'          },
+    [kPropTypeSelectable      ]: {bufnr: bufnr                                       },
+    [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label'                   },
+    [kPropTypeSlider          ]: {bufnr: bufnr                                       },
+    [kPropTypeRecent          ]: {bufnr: bufnr                                       },
+    [kPropTypeFavorite        ]: {bufnr: bufnr                                       },
+    [kPropTypeCurrentHighlight]: {bufnr: bufnr                                       },
+    [kPropTypeWarning         ]: {bufnr: bufnr, highlight: 'stylePickerWarning'      },
+    [kPropTypeTitle           ]: {bufnr: bufnr, highlight: 'Title'                   },
+    [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor'     },
+    [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'    },
+    [kPropTypeBold            ]: {bufnr: bufnr, highlight: 'stylePickerBold'         },
+    [kPropTypeItalic          ]: {bufnr: bufnr, highlight: 'stylePickerItalic'       },
+    [kPropTypeUnderline       ]: {bufnr: bufnr, highlight: 'stylePickerUnderline'    },
+    [kPropTypeUndercurl       ]: {bufnr: bufnr, highlight: 'stylePickerUndercurl'    },
+    [kPropTypeStandout        ]: {bufnr: bufnr, highlight: 'stylePickerStandout'     },
+    [kPropTypeInverse         ]: {bufnr: bufnr, highlight: 'stylePickerInverse'      },
+    [kPropTypeStrikethrough   ]: {bufnr: bufnr, highlight: 'stylePickerStrikethrough'},
+    [kPropTypeGray            ]: {bufnr: bufnr                                       },
+    [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'      },
+    [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'      },
+    [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'      },
+    [kPropTypeGray075         ]: {bufnr: bufnr, highlight: 'stylePickerGray075'      },
+    [kPropTypeGray100         ]: {bufnr: bufnr, highlight: 'stylePickerGray100'      },
   }
-enddef
-
-def SetPropertyTypes(bufnr: number)
-  const propTypes = PropertyTypes(bufnr)
 
   for [propType, propValue] in items(propTypes)
     prop_type_add(propType, propValue)
   endfor
 enddef
 
-def Text(t: string): RichText
-  return {text: t, props: []}
+def FindTextPropertyByID(bufnr: number, textPropID: number): TextProperty
+  return prop_find({bufnr: bufnr, id: textPropID, lnum: 1, col: 1}, 'f')
 enddef
 
-def Blank(width = 0): RichText
-  return Text(repeat(' ', width))
+def FirstSelectable(bufnr: number): TextProperty
+  return prop_find({bufnr: bufnr, type: kPropTypeSelectable, lnum: 1, col: 1}, 'f')
 enddef
 
-def Styled(
-    t: RichText, propType: string, from = 1, length = strchars(t.text), id = 0
-    ): RichText
-  var newProp = {col: from, length: length, type: propType }
+def LastSelectable(bufnr: number, lastLine: number): TextProperty
+  return prop_find({bufnr: bufnr, type: kPropTypeSelectable, lnum: lastLine, col: 1}, 'b')
+enddef
 
-  if id > 0
-    newProp.id = id
+def NextSelectable(bufnr: number, lnum: number): TextProperty
+  var textProp = prop_find({bufnr: bufnr, type: kPropTypeSelectable, lnum: lnum, col: 1, skipstart: true}, 'f')
+
+  if empty(textProp)
+    textProp = FirstSelectable(bufnr)
   endif
 
-  return { text: t.text, props: t.props->add(newProp) }
+  return textProp
 enddef
 
-def Tag(t: RichText, propName: string, id = 0): RichText
-  return Styled(t, propName, 1, 0, id)
-enddef
+def PrevSelectable(bufnr: number, lnum: number, lastLine: number): TextProperty
+  var textProp = prop_find({bufnr: bufnr, type: kPropTypeSelectable, lnum: lnum, col: 1, skipstart: true}, 'b')
 
-def Title(t: RichText, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, Prop.TITLE, from, length)
-enddef
-
-def Label(t: RichText, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, Prop.LABEL, from, length)
-enddef
-
-def OnOff(t: RichText, enabled: bool, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, enabled ? Prop.ON : Prop.OFF, from, length)
-enddef
-
-def GuiHighlight(t: RichText, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, Prop.GUI_HIGHLIGHT, from, length)
-enddef
-
-def CtermHighlight(t: RichText, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, Prop.CTERM_HIGHLIGHT, from, length)
-enddef
-
-def CurrentHighlight(t: RichText, from = 1, length = strchars(t.text)): RichText
-  return Styled(t, Prop.CURRENT_HIGHLIGHT, from, length)
-enddef
-
-def GetPropertyByType(bufnr: number, propType: string): dict<any>
-  return prop_find({bufnr: bufnr, type: proptType, lnum: 1, col: 1, skipstart: false}, 'f')
-enddef
-
-def GetLineNumberForID(bufnr: number, propertyID: number): number
-  return prop_find({bufnr: bufnr, id: propertyID, lnum: 1, col: 1, skipstart: false}, 'f').lnum
-enddef
-
-# Return the list of the names of the text properties for the given line in the given buffer.
-def GetProperties(bufnr: number, lnum: number): list<string>
-  return map(prop_list(lnum, {bufnr: bufnr}), (i, v) => v.type)
-enddef
-
-def FirstSelectable(winID: number): number
-  return prop_find({bufnr: winbufnr(winID), type: Prop.SELECTABLE, lnum: 1, col: 1}, 'f').id
-enddef
-
-def LastSelectable(winID: number): number
-  return prop_find({bufnr: winbufnr(winID), type: Prop.SELECTABLE, lnum: line('$', winID), col: 1}, 'b').id
-enddef
-
-def NextSelectable(winID: number, propertyID: number): number
-  const bufnr = winbufnr(winID)
-  const lnum = GetLineNumberForID(bufnr, propertyID)
-  const nextItem = prop_find({bufnr: bufnr, type: Prop.SELECTABLE, lnum: lnum, col: 1, skipstart: true}, 'f')
-
-  if empty(nextItem)
-    return FirstSelectable(winID)
-  else
-    return nextItem.id
+  if empty(textProp)
+    textProp = LastSelectable(bufnr, lastLine)
   endif
+
+  return textProp
 enddef
 
-def PrevSelectable(winID: number, propertyID: number): number
-  const bufnr = winbufnr(winID)
-  const lnum = GetLineNumberForID(bufnr, propertyID)
-  const prevItem = prop_find({bufnr: bufnr, type: Prop.SELECTABLE, lnum: lnum, col: 1, skipstart: true}, 'b')
+def HasProperty(bufnr: number, textPropID: number, propType: string): bool
+  var textProp = FindTextPropertyByID(bufnr, textPropID)
 
-  if empty(prevItem)
-    return LastSelectable(winID)
-  else
-    return prevItem.id
+  if empty(textProp)
+    return false
   endif
+
+  var propTypes = map(prop_list(textProp.lnum, {bufnr: bufnr}), (_, v) => v.type)
+  return propType->In(propTypes)
 enddef
 
-def HasProperty(winID: number, propertyID: number, propName: string): bool
-  const bufnr = winbufnr(winID)
-  return propName->In(GetProperties(bufnr, GetLineNumberForID(bufnr, propertyID)))
+class TextLine
+  var text: string
+  var props: list<TextProperty> = []
+  var id: number = 0
+
+  def new(this.text, this.id = v:none)
+  enddef
+
+  def Draw(bufnr: number, lnum: number, gutter = '')
+    setbufline(bufnr, lnum, gutter .. this.text)
+    var gutterBytes = len(gutter)
+
+    for p in this.props
+      p.bufnr = bufnr
+      if p.length == 0 && p.col == 1 # These are tags, they must not be shifted
+        prop_add(lnum, p.col, p)
+      else
+        prop_add(lnum, p.col + gutterBytes, p)
+      endif
+    endfor
+  enddef
+
+  def AsDict(): dict<any>
+    return {text: this.text, props: this.props}
+  enddef
+endclass
+
+def Text(text: string, id = 0): TextLine
+  return TextLine.new(text, id)
 enddef
 
-def IsSlider(winID: number, propertyID: number): bool
-  return HasProperty(winID, propertyID, Prop.SLIDER)
+def Blank(width = 0, id = 0): TextLine
+  return TextLine.new(repeat(' ', width), id)
 enddef
 
-def IsRecentPalette(winID: number, propertyID: number): bool
-  return HasProperty(winID, propertyID, Prop.RECENT)
+# Add a style picker property to a text line.
+#
+# t:        the input text line. This is modified in-place.
+# propType: the name of a property type.
+# from:     the start position of the property, in bytes (:help prop_add()).
+# length:   the extension of the property, in bytes (can be zero).
+# id:       the property ID (must be non-negative).
+#
+# Returns the modified text line.
+def WithStyle(
+    t: TextLine, propType: string, from = 1, length = strchars(t.text), id = 0
+    ): TextLine
+  t.props->add({col: from, length: length, type: propType, id: id})
+  return t
 enddef
 
-def RecentRow(bufnr: number, propertyID: number): bool
-  const lnum = GetLineNumberForID(bufnr, propertyID)
-  return prop_find({bufnr: bufnr, id: propertyID, lnum: 1, col: 1, skipstart: false}, 'f').lnum
+def Tagged(t: TextLine, propType: string, id = 0): TextLine
+  return WithStyle(t, propType, 1, 0, id)
 enddef
 
+def Labeled(t: TextLine, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, kPropTypeLabel, from, length)
+enddef
 
-def IsFavoritePalette(winID: number, propertyID: number): bool
-  return HasProperty(winID, propertyID, Prop.FAVORITE)
+def WithTitle(t: TextLine, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, kPropTypeTitle, from, length)
+enddef
+
+def WithState(t: TextLine, enabled: bool, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, enabled ? kPropTypeOn : kPropTypeOff, from, length)
+enddef
+
+def WithGuiHighlight(t: TextLine, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, kPropTypeGuiHighlight, from, length)
+enddef
+
+def WithCtermHighlight(t: TextLine, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, kPropTypeCtermHighlight, from, length)
+enddef
+
+def WithCurrentHighlight(t: TextLine, from = 1, length = strchars(t.text)): TextLine
+  return WithStyle(t, kPropTypeCurrentHighlight, from, length)
 enddef
 # }}}
+# Sliders {{{
+# NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
+class Slider
+  var id:      number
+  var name:    string
+  var value:   react.Property
+  var max:     number = 255
+  var min:     number = 0
 
-# Reactive properties {{{
-const POOL       = 'stylepicker_pool'
-var   WinID      = react.Property.new(-1,            POOL) # StylePicker window ID
-var   Pane       = react.Property.new(RGB_PANE,      POOL) # Current pane
-var   HiGrp      = react.Property.new('Normal',      POOL) # Current highlight group
-var   HSBColor   = react.Property.new((): list<number> => [0, 0, 0],  POOL) # HSB values for the current color
-var   FgBgS      = react.Property.new('fg',         POOL) # Current attribute ('fg', 'bg', or 'sp')
-var   SelectedID = react.Property.new(ID.RED_SLIDER, POOL) # Text property ID of the currently selected line
-var   Step       = react.Property.new(1,             POOL) # Current increment/decrement step
-var   Recent     = react.Property.new([],            POOL) # List of recent colors
-var   Favorite   = react.Property.new([],            POOL) # List of favorite colors
+  def Body(width = sPopupWidth - sGutterWidth - 6, symbols = sDefaultSliderSymbols): TextLine
+    var value     = this.value.Get()
+    var range     = this.max + 1 - this.min
+    var whole     = value * width / range
+    var frac      = value * width / (1.0 * range) - whole
+    var bar       = repeat(symbols[-1], whole)
+    var part_char = symbols[1 + float2nr(floor(frac * 8))]
+    var text      = printf("%s %3d %s%s", this.name, value, bar, part_char)
 
-def PopupExists(): bool
-  return WinID.Get()->In(popup_list())
-enddef
+    return Text(text, this.id)
+      ->Labeled(1, 1)
+      ->Tagged(kPropTypeSlider)
+      ->Tagged(kPropTypeSelectable, this.id)
+  enddef
 
-def Edited(): bool
-  return gEdited[FgBgS.Get()]
-enddef
+  def Increment(by: number)
+    var newValue = this.value.Get() + by
 
-def SetEdited()
-  gEdited = {fg: false, bg: false, sp: false}
-  gEdited[FgBgS.Get()] = true
-enddef
-
-def SetNotEdited()
-  gEdited = {fg: false, bg: false, sp: false}
-enddef
-
-def SaveToRecent(color: string)
-  var recent: list<string> = Recent.Get()
-
-  if color->NotIn(recent)
-    recent->add(color)
-
-    if len(recent) > gRecentCapacity
-      remove(recent, 0)
+    if newValue > this.max
+      newValue = this.max
     endif
 
-    Recent.Set(recent)
-  endif
+    this.value.Set(newValue)
+  enddef
+
+  def Decrement(by: number)
+    var newValue = this.value.Get() - by
+
+    if newValue < this.min
+      newValue = this.min
+    endif
+
+    this.value.Set(newValue)
+  enddef
+endclass
+
+def MakeSlider(
+    id:          number,
+    name:        string,
+    value:       react.Property,
+    max:         number = 255,
+    min:         number = 0
+    ): Slider
+  var slider = Slider.new(id, name, value, max, min)
+  sSliderByID[id] = slider
+
+  return slider
+enddef
+# }}}
+# Reactive properties {{{
+const POOL = 'stylepicker_pool'
+
+react.Clear(POOL, true) # Hard-reset when sourcing the script
+
+def GetSet(value: any, pool = POOL): list<any>
+  var p_ = react.Property.new(value, pool)
+  return [p_, p_.Get, p_.Set]
 enddef
 
+var [pPane,       Pane,         SetPane      ] = GetSet(0)     # ID of the current pane
+var [pSelectedID, SelectedID,   SetSelectedID] = GetSet(0)     # Text property ID of the currently selected line
+var [pRed,        Red,          SetRed       ] = GetSet(0)     # Red level of the current color
+var [pGreen,      Green,        SetGreen     ] = GetSet(0)     # Green level of the current color
+var [pBlue,       Blue,         SetBlue      ] = GetSet(0)     # Blue level of the current color
+var [pHiGroup,    HiGroup,      SetHiGroup   ] = GetSet('')    # Current highlight group
+var [pRecent,     Recent,       SetRecent    ] = GetSet([])    # List of recent colors
+var [pFavorite,   Favorite,     SetFavorite  ] = GetSet([])    # List of favorite colors
+var [pFgBgS,      FgBgS,        SetFgBgS     ] = GetSet('fg')  # Current color attribute ('fg', 'bg', or 'sp')
+var [pStep,       Step,         SetStep      ] = GetSet(1)     # Current increment/decrement step
+var [pGray,       Gray,         SetGray      ] = GetSet(0)     # Gray level of the current color
+var [pHue,        Hue,          SetHue       ] = GetSet(0)     # Hue of the current color
+var [pSaturation, Saturation,   SetSaturation] = GetSet(0)     # Saturation of the current color
+var [pBrightness, Brightness,   SetBrightness] = GetSet(0)     # Brightness of the current color
+var [pEdited,     Edited,       SetEdited    ] = GetSet(false) # Was the current color attribute modified by the style picker?
+
+# Caches for views
+var redSliderMemo        = react.Memo(POOL)
+var greenSliderMemo      = react.Memo(POOL)
+var blueSliderMemo       = react.Memo(POOL)
+var hueSliderMemo        = react.Memo(POOL)
+var saturationSliderMemo = react.Memo(POOL)
+var brightnessSliderMemo = react.Memo(POOL)
+var graySliderMemo       = react.Memo(POOL)
+var recentViewMemo       = react.Memo(POOL)
+var favoriteViewMemo     = react.Memo(POOL)
+
 class ColorProperty extends react.Property
+  def new(this.value, pool: string)
+    this.Register(pool)
+  enddef
+
   def Get(): string
-    this._value = GetColor(HiGrp.Get(), FgBgS.Get())
+    this.value = GetHighlightColor(HiGroup(), FgBgS())
     return super.Get()
   enddef
 
-  def Set(newValue: string)
-    var fgBgS = FgBgS.Get()
-    var attrs: dict<any> = {name: HiGrp.Get(), [$'gui{fgBgS}']: newValue}
-
-    if newValue == 'NONE'
-      attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = newValue
-    else
-      attrs[$'cterm{fgBgS == "sp" ? "ul" : fgBgS}'] = string(libcolor.Approximate(newValue).xterm)
+  def Set(newValue: string, force = false)
+    if !force && newValue == this.value
+      return
     endif
 
-    react.Begin()
+    var fgBgS            = FgBgS()
+    var guiAttr          = 'gui' .. fgBgS
+    var ctermAttr        = 'cterm' .. SpecialSuffix(fgBgS, 'cterm')
+    var attrs: dict<any> = {name: HiGroup(), [guiAttr]: newValue}
 
-    if !Edited()
-      SaveToRecent(Color.Get())
-      SetEdited()
+    if newValue == 'NONE'
+      attrs[ctermAttr] = 'NONE'
+    else
+      attrs[ctermAttr] = string(libcolor.Approximate(newValue).xterm)
     endif
 
     hlset([attrs])
-    super.Set(newValue)
-
-    react.Commit()
+    super.Set(newValue, force)
   enddef
 endclass
 
@@ -584,123 +703,517 @@ class StyleProperty extends react.Property
     underdouble:   false,
   }
 
+  def new(this.value, pool: string)
+    this.Register(pool)
+  enddef
+
   def Get(): dict<bool>
-    const hl = hlget(HiGrp.Get(), true)[0]
-    var style: dict<bool> = get(hl, 'gui', get(hl, 'cterm', {}))
+    var hl = hlget(HiGroup(), true)[0]
+    var style: dict<bool> = extendnew(
+      StyleProperty.styles, get(hl, 'gui', get(hl, 'cterm', {})), 'force' # FIXME
+    )
 
-    this._value = StyleProperty.styles->extendnew(style, 'force')
-
-    if this._value.undercurl || this._value.underdashed || this._value.underdotted || this._value.underdouble
-      this._value.underline = true
+    if style.undercurl || style.underdashed || style.underdotted || style.underdouble
+      style.underline = true
     endif
+
+    this.value = style
 
     return super.Get()
   enddef
 
-  def Set(newValue: dict<bool>)
-    const style = filter(newValue, (_, v) => v)
+  def Set(value: dict<bool>, force = true)
+    var style = filter(value, (_, v) => v)
 
-    hlset([{name: HiGrp.Get(), 'gui': style, 'cterm': style}])
-    super.Set(newValue)
+    hlset([{name: HiGroup(), 'gui': style, 'cterm': style}])
+    super.Set(value, force)
   enddef
 endclass
 
-var Color = ColorProperty.new(v:none, POOL) # Value of the current color (e.g., '#fdfdfd')
-var Style = StyleProperty.new(v:none, POOL) # Dictionary of style attributes (e.g., {bold, true, italic: false, etc...})
+# These are initialized automatically at the first Get() or Set()
+var pColor = ColorProperty.new(v:none, POOL) # Value of the current color (e.g., '#fdfdfd')
+var pStyle = StyleProperty.new(v:none, POOL) # Dictionary of style attributes (e.g., {bold, true, italic: false, etc...})
+var [Color, SetColor] = [pColor.Get, pColor.Set]
+var [Style, SetStyle] = [pStyle.Get, pStyle.Set]
 
-def AltColor(): string
-  if FgBgS.Get() == 'bg'
-    return GetColor(HiGrp.Get(), 'fg')
-  else
-    return GetColor(HiGrp.Get(), 'bg')
-  endif
-enddef
-
-def InitProperties(
-    winID: number, pane: number, hiGrp: string
-    )
+def InitProperties(hiGroup: string, favoritePath = sFavoritePath)
   react.Clear(POOL)
 
-  WinID.Set(winID)
-  HiGrp.Set(empty(hiGrp) ? HiGroupUnderCursor() : hiGrp)
-  HSBColor.Set((): list<number> => libcolor.Hex2Rgb(HiGrp.Get()))
-  # These properties always have valid values, and not resetting them provides a better UX:
-  # FgBgS.Set('fg')
-  # Step.Set(1)
-  # Recent.Set([])
+  SetHiGroup(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
+  SetEdited(false)
+  SetPane(kRGBPane)
+  SetSelectedID(kRedSlider)
 
-  if !empty(gFavoritePath)
-    Favorite.Set(LoadPalette(gFavoritePath))
+  if !empty(favoritePath)
+    SetFavorite(LoadPalette(favoritePath))
   endif
-
-  SwitchPane(pane)()
 enddef
 # }}}
+# Views {{{
+# Render views {{{
+type View = func(): list<TextLine>
 
-# Key map {{{
-const KEYMAP = extend({
-  'add-to-favorite':      "A",
-  'bot':                  ">",
-  'cancel':               "X",
-  'clear-color':          "Z",
-  'close':                "x",
-  'decrement':            "\<left>",
-  'down':                 "\<down>",
-  'fg<bg<sp':             "\<s-tab>",
-  'fg>bg>sp':             "\<tab>",
-  'gray-pane':            "G",
-  'help':                 "?",
-  'hsb-pane':             "H",
-  'increment':            "\<right>",
-  'paste':                "P",
-  'pick-from-palette':    "\<enter>",
-  'remove-from-palette':  "D",
-  'rgb-pane':             "R",
-  'set-color':            "E",
-  'set-higroup':          "N",
-  'toggle-bold':          "B",
-  'toggle-italic':        "I",
-  'toggle-reverse':       "V",
-  'toggle-standout':      "S",
-  'toggle-strikethrough': "K",
-  'toggle-undercurl':     "~",
-  'toggle-underdashed':   "-",
-  'toggle-underdotted':   ".",
-  'toggle-underdouble':   "=",
-  'toggle-underline':     "U",
-  'top':                  "<",
-  'up':                   "\<up>",
-  'yank':                 "Y",
-}, get(g:, 'stylepicker_keys', {}), 'force')
+def RenderView(V: func(): any, bufnr: number, lnum: number): number
+  var lnum_ = lnum
+  var text: list<TextLine> = V()
 
-const PRETTY_KEY = {
-  "\<left>":  "←",
-  "\<right>": "→",
-  "\<up>":    "↑",
-  "\<down>":  "↓",
-  "\<tab>":   "↳",
-  "\<s-tab>": "⇧-↳",
-  "\<enter>": "↲",
-}
+  for textLine in text
+    var gutter: string
 
-def KeySymbol(action: string): string
-  const key = KEYMAP[action]
-  return get(PRETTY_KEY, key, key)
+    if textLine.id == 0
+      gutter = ''
+    else
+      gutter = (SelectedID() == textLine.id ? sMarker : sGutter)
+    endif
+
+    textLine.Draw(bufnr, lnum_, gutter)
+    ++lnum_
+  endfor
+
+  return lnum_
 enddef
 # }}}
+# TitleView {{{
+def TitleView(): list<TextLine>
+  var hiGroup = HiGroup()
+  var fgBgS   = FgBgS()
+  var aStyle  = Style()
 
+  var attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
+  var width   = sPopupWidth
+  var offset  = width - len(attrs) + 1
+  var spaces  = repeat(' ', width - strchars(hiGroup) - strchars(fgBgS) - strchars(attrs) - 3)
+  var text    = $"{hiGroup} [{fgBgS}]{spaces}{attrs}"
+
+  return [Text(text)
+    ->WithTitle(1, strchars(hiGroup) + strchars(fgBgS) + 3)
+    ->WithState(aStyle.bold,          offset,     1)
+    ->WithState(aStyle.italic,        offset + 1, 1)
+    ->WithState(aStyle.underline,     offset + 2, 1)
+    ->WithState(aStyle.reverse,       offset + 3, 1)
+    ->WithState(aStyle.standout,      offset + 4, 1)
+    ->WithState(aStyle.strikethrough, offset + 5, 1),
+    Blank(),
+  ]
+enddef
+# }}}
+# StepView {{{
+def StepView(): list<TextLine>
+  const text = printf('Step  %02d', Step())
+  return [
+    Text(text)->Labeled(1, 4),
+    Blank(),
+  ]
+enddef
+# }}}
+# ColorInfoView {{{
+def ColorInfoView(): list<TextLine>
+  var hiGrp       = HiGroup()
+  var fgBgS       = FgBgS()
+  var curColor    = Color()
+
+  var altColor    = AltColor(hiGrp, fgBgS)
+  var approxCol   = libcolor.Approximate(curColor)
+  var approxAlt   = libcolor.Approximate(altColor)
+  var contrast    = libcolor.ContrastColor(curColor)
+  var contrastAlt = libcolor.Approximate(contrast)
+  var guiScore    = ComputeScore(curColor, altColor)
+  var termScore   = ComputeScore(approxCol.hex, approxAlt.hex)
+  var delta       = printf("%.1f", approxCol.delta)[ : 2]
+  var guiGuess    = (curColor != HiGroupColorAttr(hiGrp, fgBgS, 'gui') ? '!' : ' ')
+  var ctermGuess  = (string(approxCol.xterm) != HiGroupColorAttr(hiGrp, fgBgS, 'cterm') ? '!' : ' ')
+
+  var info = printf(
+    $' {guiGuess}   {ctermGuess}   %s %-5S %3d/%s %-5S Δ{delta}',
+    curColor[1 : ],
+    repeat(sStar, guiScore),
+    approxCol.xterm,
+    approxCol.hex[1 : ],
+    repeat(sStar, termScore)
+  )
+
+  execute $'hi stylePickerGuiColor guifg={contrast} guibg={curColor} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
+  execute $'hi stylePickerTermColor guifg={contrast} guibg={approxCol.hex} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
+
+  return [
+    Text(info)->WithGuiHighlight(1, 3)->WithCtermHighlight(5, 3),
+    Blank(),
+  ]
+enddef
+# }}}
+# QuotationView {{{
+def QuotationView(): list<TextLine>
+  return [
+    Text(Center(Quote(), sPopupWidth))->WithCurrentHighlight(),
+    Blank(),
+  ]
+enddef
+# }}}
+# Grayscale View {{{
+def GrayscaleView(): list<TextLine>
+  return [
+    Text('Grayscale')->Labeled(),
+    Blank(sPopupWidth)
+    ->WithStyle(kPropTypeGray000, sGutterWidth +  6, 2)
+    ->WithStyle(kPropTypeGray025, sGutterWidth + 14, 2)
+    ->WithStyle(kPropTypeGray050, sGutterWidth + 22, 2)
+    ->WithStyle(kPropTypeGray075, sGutterWidth + 30, 2)
+    ->WithStyle(kPropTypeGray100, sGutterWidth + 38, 2),
+  ]
+enddef
+# }}}
+# RecentView and FavoriteView {{{
+def ColorItemTextProperty(textPropType: string, id: number, k: number): string
+  return $'stylePicker{textPropType}{id}_{k}'
+enddef
+
+def ColorStripLabels(indexes: list<number>): TextLine
+  return Text(' ' .. join(indexes, '   '), kLabels)->Labeled()
+enddef
+
+def MakeColorStrip(
+    size:         number, # Number of colors
+    id:           number, # Unique ID of this strip
+    textPropType: string, # Text property identifying the palette this strip belongs to
+    width:        number, # Space occupied by this color strip
+    ): TextLine
+  var colorStrip = Blank(width, id)
+
+  for k in range(size)
+    var textProp = ColorItemTextProperty(textPropType, id, k)
+    colorStrip->WithStyle(textProp, 4 * k + 1, 3)
+  endfor
+
+  return colorStrip
+enddef
+
+def MakePaletteView(
+    Palette:         func(): any,
+    title:           string,   # Title of the palette
+    textPropType:    string,   # Property type of associated to the palette
+    baseID:          number,   # First text property ID for the grid (incremented by one for each additional line)
+    alwaysVisible:   bool,     # If true, hide the palette's title when there are no colors
+    colors_per_line: number = kNumColorsPerLine,
+    ): View
+  return (): list<TextLine> => {
+    var size = len(Palette())
+    var paletteText = [Text(title)->Labeled()]
+
+    if size == 0
+      if alwaysVisible
+        paletteText->add(Blank())->add(Blank())
+      else
+        paletteText = []
+      endif
+
+      return paletteText
+    endif
+
+    var width = sPopupWidth - sGutterWidth
+    var rowNumber = 0
+    var i = 0
+
+    while i < size
+      var id = baseID + rowNumber
+      var n = size - i < colors_per_line ? size - i : colors_per_line
+      var strip = MakeColorStrip(n, id, textPropType, width)
+      strip->Tagged(kPropTypeSelectable, id)
+      strip->Tagged(textPropType, rowNumber)
+
+      if i == 0
+        paletteText->add(ColorStripLabels(range(n)))
+      else
+        paletteText->add(Blank())
+      endif
+
+      paletteText->add(strip)
+      rowNumber += 1
+      i += n
+    endwhile
+
+    paletteText->add(Blank())
+
+    return paletteText
+  }
+enddef
+
+const RecentView   = MakePaletteView(Recent,   'Recent Colors',   kPropTypeRecent,   kRecentColors,   true)
+const FavoriteView = MakePaletteView(Favorite, 'Favorite Colors', kPropTypeFavorite, kFavoriteColors, false)
+# }}}
+# }}}
+# Effects {{{
+# Render Slider {{{
+def RenderSliderEffect(
+    bufnr: number, lnum: number, pane: number, slider: react.Property,
+    )
+  react.CreateEffect(() => {
+    if Pane() == pane
+      var sliderLine: TextLine = slider.Get()
+      var gutter = SelectedID() == sliderLine.id ? sMarker : sGutter
+      sliderLine.Draw(bufnr, lnum, gutter)
+    endif
+  })
+enddef
+# }}}
+# RGB Sliders {{{
+def RenderRgbSliders(bufnr: number, lnum: number)
+  var redSlider   = MakeSlider(kRedSlider,   'R', pRed)
+  var greenSlider = MakeSlider(kGreenSlider, 'G', pGreen)
+  var blueSlider  = MakeSlider(kBlueSlider,  'B', pBlue)
+
+  react.CreateMemo(redSliderMemo,   (): TextLine => redSlider.Body())
+  react.CreateMemo(greenSliderMemo, (): TextLine => greenSlider.Body())
+  react.CreateMemo(blueSliderMemo,  (): TextLine => blueSlider.Body())
+
+  RenderSliderEffect(bufnr, lnum,     kRGBPane, redSliderMemo)
+  RenderSliderEffect(bufnr, lnum + 1, kRGBPane, greenSliderMemo)
+  RenderSliderEffect(bufnr, lnum + 2, kRGBPane, blueSliderMemo)
+enddef
+# }}}
+# HSB Sliders {{{
+def RenderHsbSliders(bufnr: number, lnum: number)
+  var hueSlider        = MakeSlider(kHueSlider,        'H', pHue,        359)
+  var saturationSlider = MakeSlider(kSaturationSlider, 'S', pSaturation, 100)
+  var brightnessSlider = MakeSlider(kBrightnessSlider, 'B', pBrightness, 100)
+
+  react.CreateMemo(hueSliderMemo,        (): TextLine => hueSlider.Body())
+  react.CreateMemo(saturationSliderMemo, (): TextLine => saturationSlider.Body())
+  react.CreateMemo(brightnessSliderMemo, (): TextLine => brightnessSlider.Body())
+
+  RenderSliderEffect(bufnr, lnum,     kHSBPane, hueSliderMemo)
+  RenderSliderEffect(bufnr, lnum + 1, kHSBPane, saturationSliderMemo)
+  RenderSliderEffect(bufnr, lnum + 2, kHSBPane, brightnessSliderMemo)
+enddef
+# }}}
+# Grayscale Slider {{{
+def RenderGrayscaleSlider(bufnr: number, lnum: number)
+  var graySlider = MakeSlider(kGrayscaleSlider, 'G', pGray)
+
+  react.CreateEffect(() => {
+    if Pane() == kGrayPane
+      RenderView(GrayscaleView, bufnr, lnum)
+    endif
+  })
+
+  react.CreateMemo(graySliderMemo, (): TextLine => graySlider.Body())
+  RenderSliderEffect(bufnr, lnum + 2, kGrayPane, graySliderMemo)
+enddef
+# }}}
+# Color Picker {{{
+def ColorPicker(bufnr: number)
+  def Render(V: func(): any, lnum: number): number
+    var lnum_ = lnum
+
+    react.CreateEffect(() => {
+      if Pane() != kHelpPane
+        lnum_ = RenderView(V, bufnr, lnum)
+      endif
+    })
+
+    return lnum_
+  enddef
+
+  def RenderLast(V: func(): any, lnum: number)
+    react.CreateEffect(() => {
+      if Pane() != kHelpPane
+        var lastLine = RenderView(V, bufnr, lnum)
+        deletebufline(bufnr, lastLine, '$')
+      endif
+    })
+  enddef
+
+  Render(TitleView, 1)
+  RenderRgbSliders(bufnr, 3)
+  RenderHsbSliders(bufnr, 3)
+  RenderGrayscaleSlider(bufnr, 3)
+  Render(StepView, 6)
+  Render(ColorInfoView, 8)
+  Render(QuotationView, 10)
+
+  var CachedRecentView = react.CreateMemo(recentViewMemo, (): list<TextLine> => RecentView())
+  var CachedFavoriteView = react.CreateMemo(favoriteViewMemo, (): list<TextLine> => FavoriteView())
+
+  var lnum_ = Render(CachedRecentView, 12)
+  RenderLast(CachedFavoriteView, lnum_)
+enddef
+# }}}
+# Help Pane {{{
+def HelpPane(winID: number)
+  var s = [
+    KeySymbol('up'),                   # 00
+    KeySymbol('down'),                 # 01
+    KeySymbol('top'),                  # 02
+    KeySymbol('bot'),                  # 03
+    KeySymbol('fg>bg>sp'),             # 04
+    KeySymbol('fg<bg<sp'),             # 05
+    KeySymbol('toggle-tracking'),      # 06
+    KeySymbol('rgb-pane'),             # 07
+    KeySymbol('hsb-pane'),             # 08
+    KeySymbol('gray-pane'),            # 09
+    KeySymbol('close'),                # 10
+    KeySymbol('cancel'),               # 11
+    KeySymbol('help'),                 # 12
+    KeySymbol('toggle-bold'),          # 13
+    KeySymbol('toggle-italic'),        # 14
+    KeySymbol('toggle-reverse'),       # 15
+    KeySymbol('toggle-standout'),      # 16
+    KeySymbol('toggle-strikethrough'), # 17
+    KeySymbol('toggle-underline'),     # 18
+    KeySymbol('toggle-undercurl'),     # 19
+    KeySymbol('toggle-underdashed'),   # 20
+    KeySymbol('toggle-underdotted'),   # 21
+    KeySymbol('toggle-underdouble'),   # 22
+    KeySymbol('increment'),            # 23
+    KeySymbol('decrement'),            # 24
+    KeySymbol('yank'),                 # 25
+    KeySymbol('paste'),                # 26
+    KeySymbol('set-color'),            # 27
+    KeySymbol('set-higroup'),          # 28
+    KeySymbol('clear-color'),          # 29
+    KeySymbol('add-to-favorite'),      # 30
+    KeySymbol('yank'),                 # 31
+    KeySymbol('remove-from-palette'),  # 32
+    KeySymbol('pick-from-palette'),    # 33
+  ]
+  const maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
+
+  # Pad with spaces, so all symbol strings have the same width
+  map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
+
+  react.CreateEffect(() => {
+    if Pane() == kHelpPane
+      popup_settext(winID, mapnew([
+        Text('Keyboard Controls')->WithTitle(),
+        Blank(),
+        Text('Popup')->Labeled(),
+        Text($'{s[00]} Move up           {s[07]} RGB Pane'),
+        Text($'{s[01]} Move down         {s[08]} HSB Pane'),
+        Text($'{s[02]} Go to top         {s[09]} Grayscale'),
+        Text($'{s[03]} Go to bottom      {s[10]} Close'),
+        Text($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
+        Text($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
+        Text($'{s[06]} Toggle tracking'),
+        Blank(),
+        Text('Attributes')->Labeled(),
+        Text($'{s[13]} Toggle boldface   {s[18]} Toggle underline'),
+        Text($'{s[14]} Toggle italics    {s[19]} Toggle undercurl'),
+        Text($'{s[15]} Toggle reverse    {s[20]} Toggle underdashed'),
+        Text($'{s[16]} Toggle standout   {s[21]} Toggle underdotted'),
+        Text($'{s[17]} Toggle strikethru {s[22]} Toggle underdouble'),
+        Blank(),
+        Text('Color')->Labeled(),
+        Text($'{s[23]} Increment value   {s[27]} Set value'),
+        Text($'{s[24]} Decrement value   {s[28]} Set hi group'),
+        Text($'{s[25]} Yank color        {s[29]} Clear color'),
+        Text($'{s[26]} Paste color       {s[30]} Add to favorites'),
+        Blank(),
+        Text('Recent & Favorites')->Labeled(),
+        Text($'{s[31]} Yank color        {s[33]} Pick color'),
+        Text($'{s[32]} Delete color'),
+      ], (_, textLine: TextLine) => textLine.AsDict()))
+    endif
+  })
+enddef
+# }}}
+# Palette Highlighting {{{
+def SyncPaletteHighlight(
+    bufnr: number, textPropType: string, baseID: number, Palette: func(): any, colors_per_line = kNumColorsPerLine
+    )
+  react.CreateEffect(() => {
+    var palette: list<string> = Palette()
+    var i = 0
+
+    while i < len(palette)
+      var hiGroup   = $'stylePicker{textPropType}{i}'
+      var rowNumber = i / colors_per_line
+      var k         = i % colors_per_line
+      var textProp  = ColorItemTextProperty(textPropType, baseID + rowNumber, k)
+      var hexCol    = palette[i]
+      var approx    = libcolor.Approximate(hexCol)
+
+      execute $'hi {hiGroup} guibg={hexCol} ctermbg={approx.xterm}'
+      prop_type_delete(textProp, {bufnr: bufnr})
+      prop_type_add(textProp, {bufnr: bufnr, highlight: hiGroup})
+      ++i
+    endwhile
+  })
+enddef
+# }}}
+# InitEffects {{{
+def SaveToRecent()
+  var recent: list<string> = pRecent.value
+  var color: string = pColor.value
+
+  if color->NotIn(recent)
+    recent->add(color)
+
+    if len(recent) > sRecentCapacity
+      remove(recent, 0)
+    endif
+
+    SetRecent(recent, true)
+  endif
+enddef
+
+def InitEffects(winID: number)
+  var bufnr = winbufnr(winID)
+
+  # Sync the text property for the current highlight group
+  react.CreateEffect(() => {
+    prop_type_change(kPropTypeCurrentHighlight, {bufnr: bufnr, highlight: HiGroup()})
+  })
+
+  # Sync the highlight groups for the text properties of the color palettes
+  SyncPaletteHighlight(bufnr, kPropTypeRecent, kRecentColors, Recent)
+  SyncPaletteHighlight(bufnr, kPropTypeFavorite, kFavoriteColors, Favorite)
+
+  # Keep the color in sync with the RGB components, grayscale and HSB values
+  react.CreateEffect(() => {
+    var [r, g, b] = libcolor.Hex2Rgb(Color())
+    SetRed(r)
+    SetGreen(g)
+    SetBlue(b)
+  })
+  react.CreateEffect(() => {
+    SetColor(libcolor.Rgb2Hex(Red(), Green(), Blue()))
+  })
+
+  react.CreateEffect(() => {
+    if Pane() == kGrayPane
+      var gray = Gray()
+
+      if Edited()
+        SetColor(libcolor.Gray2Hex(gray))
+      endif
+    endif
+  })
+
+  react.CreateEffect(() => {
+    if Pane() == kHSBPane
+      SetColor(libcolor.Hsv2Hex(Hue(), Saturation(), Brightness()))
+    endif
+  })
+
+  # Save a color to the recent palette when it's edited
+  react.CreateEffect(() => {
+    if Edited()
+      SaveToRecent()
+    endif
+  })
+
+  # Reset the edited status when highlight group changes
+  react.CreateEffect(() => {
+    HiGroup()
+    SetEdited(false)
+  })
+
+  # Create effects to render the UI
+  ColorPicker(bufnr)
+  HelpPane(winID)
+enddef
+# }}}
+# }}}
 # Actions {{{
-# Action Helpers {{{
-def SaveToFavorite(color: string, savePath: string)
-  var favorite: list<string> = Favorite.Get()
-
-  if color->NotIn(favorite)
-    favorite->add(color)
-    Favorite.Set(favorite)
-    SavePalette(favorite, savePath)
-  endif
-enddef
-
 def AskIndex(max: number): number
   echo $'[StylePicker] Which color (0-{max})? '
   const key = getcharstr()
@@ -718,106 +1231,40 @@ def AskIndex(max: number): number
 enddef
 
 def ActOnPalette(
-    winID:      number,
-    Palette:    react.Property,
-    rowNum:     number,
-    Action:     func(list<string>, number, react.Property)
+    palette:         react.Property,
+    rowNumber:       number,
+    Do:              func(list<string>, number, react.Property),
+    colors_per_line: number = kNumColorsPerLine,
     ): bool
-  var palette: list<string> = Palette.Get()
-  var from = rowNum * NUM_COLORS_PER_LINE
-  var to = from + NUM_COLORS_PER_LINE - 1
+  var colorStrip: list<string> = palette.Get()
+  var from = rowNumber * colors_per_line
+  var to = from + colors_per_line - 1
 
-  if to >= len(palette)
-    to = len(palette) - 1
+  if to >= len(colorStrip)
+    to = len(colorStrip) - 1
   endif
 
-  const n = AskIndex(to - from)
+  var n = AskIndex(to - from)
 
   if n >= 0
-    Action(palette, from + n, Palette)
+    Do(colorStrip, from + n, palette)
     return true
   endif
 
   return false
 enddef
 
-def GetPaletteInfo(winID: number): dict<any>
-  const id = SelectedID.Get()
-
-  if IsRecentPalette(winID, id)
-    return {rowNum: id - ID.RECENT_COLORS, palette: Recent}
-  endif
-
-  if IsFavoritePalette(winID, id)
-    return {rowNum: id - ID.FAVORITE_COLORS, palette: Favorite}
-  endif
-
-  return {}
-enddef
-# }}}
-
-def PickColor(winID: number): func(): bool
-  const bufnr = winbufnr(winID)
-  const Pick = (colors: list<string>, n: number, palette: react.Property) => {
-    Color.Set(colors[n])
-  }
-
+def AddToFavorite(winID: number, savePath: string): Action
   return (): bool => {
-    const info = GetPaletteInfo(winID)
+    var color = Color()
+    var favorite: list<string> = Favorite()
 
-    if !empty(info)
-      ActOnPalette(winID, info.palette, info.rowNum, Pick)
-    endif
+    if color->NotIn(favorite)
+      favorite->add(color)
+      SetFavorite(favorite, true)
 
-    return !empty(info)
-  }
-enddef
-
-def RemoveColor(winID: number): func(): bool
-  const bufnr = winbufnr(winID)
-  const Remove = (colors: list<string>, n: number, palette: react.Property) => {
-    remove(colors, n)
-    palette.Set(colors)
-  }
-
-  return (): bool => {
-    const info = GetPaletteInfo(winID)
-    const palette: react.Property = info.palette
-
-    if !empty(info)
-      react.Transaction(() => {
-
-        ActOnPalette(winID, palette, info.rowNum, Remove)
-
-        if empty(palette.Get())
-          SelectPrev(winID)()
-        endif
-      })
-
-      if palette is Favorite
-        SavePalette(palette.Get(), gFavoritePath)
-      endif
-    endif
-
-    return !empty(info)
-  }
-enddef
-
-def YankColor(winID: number): func(): bool
-  const bufnr = winbufnr(winID)
-  const Yank = (colors: list<string>, n: number, palette: react.Property) => {
-    @" = colors[n] # TODO: allow setting register via user option
-  }
-
-  return (): bool => {
-    const info = GetPaletteInfo(winID)
-
-    if empty(info)
-      @" = Color.Get()
-      Notification(winID, 'Color yanked: ' .. @")
-    else
-      if ActOnPalette(winID, info.palette, info.rowNum, Yank)
-        Notification(winID, 'Color yanked: ' .. @")
+      if !empty(savePath)
+        SavePalette(favorite, savePath)
       endif
     endif
 
@@ -825,206 +1272,7 @@ def YankColor(winID: number): func(): bool
   }
 enddef
 
-def PasteColor(windID: number): func(): bool
-  return (): bool => {
-    if @" =~ '\m^#\=[A-Fa-f0-9]\{6}$'
-      SetNotEdited() # Force saving the current color to recent palette
-      Color.Set(@"[0] == '#' ? @" : '#' .. @")
-    endif
-    return true
-  }
-enddef
-
-def AddToFavorite(winID: number): func(): bool
-  return (): bool => {
-    SaveToFavorite(Color.Get(), gFavoritePath)
-    return true
-  }
-enddef
-
-def IncrementValue(value: number, max: number): number
-  const newValue = value + Step.Get()
-
-  if newValue > max
-    return max
-  else
-    return newValue
-  endif
-enddef
-
-def DecrementValue(value: number, min: number = 0): number
-  const newValue = value - Step.Get()
-
-  if newValue < min
-    return min
-  else
-    return newValue
-  endif
-enddef
-
-def Increment(winID: number): func(): bool
-  return (): bool => {
-    const pane = Pane.Get()
-    const selectedID = SelectedID.Get()
-
-    if pane == RGB_PANE
-      var [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
-
-      if selectedID == ID.RED_SLIDER
-        red = IncrementValue(red, 255)
-      elseif selectedID == ID.GREEN_SLIDER
-        green = IncrementValue(green, 255)
-      elseif selectedID == ID.BLUE_SLIDER
-        blue = IncrementValue(blue, 255)
-      else
-        return false
-      endif
-
-      Color.Set(libcolor.Rgb2Hex(red, green, blue))
-      return true
-    endif
-
-    if pane == HSB_PANE
-      var HSB = HSBColor.Get()
-      var [h, s, b] = HSB()
-
-      if selectedID == ID.H_SLIDER
-        h = IncrementValue(h, 359)
-      elseif selectedID == ID.S_SLIDER
-        s = IncrementValue(s, 100)
-      elseif selectedID == ID.B_SLIDER
-        b = IncrementValue(b, 100)
-      else
-        return false
-      endif
-
-      react.Transaction(() => {
-        HSBColor.Set(() => [h, s, b])
-        Color.Set(libcolor.Hsv2Hex(h, s, b))
-      })
-      return true
-    endif
-
-    if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
-      var gray = libcolor.Hex2Gray(Color.Get())
-      gray = IncrementValue(gray, 255)
-      Color.Set(libcolor.Gray2Hex(gray))
-      return true
-    endif
-
-    return false
-  }
-enddef
-
-def Decrement(winID: number): func(): bool
-  return (): bool => {
-    const pane = Pane.Get()
-    const selectedID = SelectedID.Get()
-
-    if pane == RGB_PANE
-      var [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
-
-      if selectedID == ID.RED_SLIDER
-        red = DecrementValue(red)
-      elseif selectedID == ID.GREEN_SLIDER
-        green = DecrementValue(green)
-      elseif selectedID == ID.BLUE_SLIDER
-        blue = DecrementValue(blue)
-      else
-        return false
-      endif
-
-      Color.Set(libcolor.Rgb2Hex(red, green, blue))
-      return true
-    endif
-
-    if pane == HSB_PANE
-      var HSB = HSBColor.Get()
-      var [h, s, b] = HSB()
-
-      if selectedID == ID.H_SLIDER
-        h = DecrementValue(h)
-      elseif selectedID == ID.S_SLIDER
-        s = DecrementValue(s)
-      elseif selectedID == ID.B_SLIDER
-        b = DecrementValue(b)
-      else
-        return false
-      endif
-
-      react.Transaction(() => {
-        HSBColor.Set(() => [h, s, b])
-        Color.Set(libcolor.Hsv2Hex(h, s, b))
-      })
-      return true
-    endif
-
-    if pane == GRAY_PANE && selectedID == ID.GRAY_SLIDER
-      var gray = libcolor.Hex2Gray(Color.Get())
-      gray = DecrementValue(gray)
-      Color.Set(libcolor.Gray2Hex(gray))
-      return true
-    endif
-
-    return false
-  }
-enddef
-
-def FgBgSNext(): func(): bool
-  return (): bool => {
-    const old = FgBgS.Get()
-    const new = (old == 'fg' ? 'bg' : old == 'bg' ? 'sp' : 'fg')
-    FgBgS.Set(new)
-    return true
-  }
-enddef
-
-def FgBgSPrev(): func(): bool
-  return (): bool => {
-    const old = FgBgS.Get()
-    const new = (old == 'fg' ? 'sp' : old == 'sp' ? 'bg' : 'fg')
-    FgBgS.Set(new)
-    return true
-  }
-enddef
-
-def GoToTop(winID: number): func(): bool
-  return (): bool => {
-    SelectedID.Set(FirstSelectable(winID))
-    return true
-  }
-enddef
-
-def GoToBottom(winID: number): func(): bool
-  return (): bool => {
-    SelectedID.Set(LastSelectable(winID))
-    return true
-  }
-enddef
-
-def SelectNext(winID: number): func(): bool
-  return (): bool => {
-    SelectedID.Set(NextSelectable(winID, SelectedID.Get()))
-    echomsg $'[StylePicker] DEBUG SelectedID = {SelectedID.Get()} Effects = ' SelectedID.Effects()
-    return true
-  }
-enddef
-
-def SelectPrev(winID: number): func(): bool
-  return (): bool => {
-    SelectedID.Set(PrevSelectable(winID, SelectedID.Get()))
-    return true
-  }
-enddef
-
-def Close(winID: number): func(): bool
-  return (): bool => {
-    popup_close(winID)
-    return true
-  }
-enddef
-
-def Cancel(winID: number): func(): bool
+def Cancel(winID: number): Action
   return (): bool => {
     popup_close(winID)
 
@@ -1032,47 +1280,267 @@ def Cancel(winID: number): func(): bool
     if exists('g:colors_name') && !empty('g:colors_name')
       execute 'colorscheme' g:colors_name
     endif
+
     return true
   }
 enddef
 
-def ChooseColor(): func(): bool
+def ChooseColor(colorMode = sColorMode): Action
   return (): bool => {
     var newCol: string
 
-    if ColorMode() == 'gui'
+    if colorMode == 'gui'
       newCol = ChooseGuiColor()
     else
       newCol = ChooseTermColor()
     endif
 
     if !empty(newCol)
-      Color.Set(newCol)
+      SetColor(newCol)
     endif
 
     return true
   }
 enddef
 
-def ChooseHiGrp(): func(): bool
+def ChooseHiGrp(): Action
   return (): bool => {
     const hiGroup = input('Highlight group: ', '', 'highlight')
     echo "\r"
 
     if hlexists(hiGroup)
-      HiGrp.Set(hiGroup)
+      UntrackCursorAutoCmd()
+      SetHiGroup(hiGroup)
     endif
 
     return true
   }
 enddef
 
-def ToggleStyleAttribute(attr: string): func(): bool
+def ClearColor(winID: number): Action
   return (): bool => {
-    var currentStyle: dict<bool> = Style.Get()
+    SaveToRecent()
+    SetColor('NONE')
+    Notification(winID, $'[{FgBgS()}] Color cleared')
+    return true
+  }
+enddef
+
+def Close(winID: number): Action
+  return (): bool => {
+    popup_close(winID)
+
+    return true
+  }
+enddef
+
+def Decrement(winID: number): Action
+  return (): bool => {
+    var slider: Slider = get(sSliderByID, SelectedID(), null_object)
+    var isSlider = (slider != null)
+
+    if isSlider
+      slider.Decrement(Step())
+      SetEdited(true)
+    endif
+
+    return isSlider
+  }
+enddef
+
+def FgBgSNext(): Action
+  return (): bool => {
+    var attr = FgBgS()
+    attr = (attr == 'fg' ? 'bg' : attr == 'bg' ? 'sp' : 'fg')
+    SetFgBgS(attr)
+    SetEdited(false)
+
+    return true
+  }
+enddef
+
+def FgBgSPrev(): Action
+  return (): bool => {
+    var attr = FgBgS()
+    attr = (attr == 'fg' ? 'sp' : attr == 'sp' ? 'bg' : 'fg')
+    SetFgBgS(attr)
+    SetEdited(false)
+
+    return true
+  }
+enddef
+
+def GoToBottom(bufnr: number, lastLine: number): Action
+  return (): bool => {
+    SetSelectedID(LastSelectable(bufnr, lastLine).id)
+    return true
+  }
+enddef
+
+def GoToTop(bufnr: number): Action
+  return (): bool => {
+    SetSelectedID(FirstSelectable(bufnr).id)
+    return true
+  }
+enddef
+
+def Increment(winID: number): Action
+  return (): bool => {
+    var slider: Slider = get(sSliderByID, SelectedID(), null_object)
+    var isSlider = (slider != null)
+
+    if isSlider
+      slider.Increment(Step())
+      SetEdited(true)
+    endif
+
+    return isSlider
+  }
+enddef
+
+def PaletteInfo(bufnr: number): dict<any>
+  var id = SelectedID()
+
+  if HasProperty(bufnr, id, kPropTypeRecent)
+    return {rowNum: id - kRecentColors, palette: pRecent}
+  endif
+
+  if HasProperty(bufnr, id, kPropTypeFavorite)
+    return {rowNum: id - kFavoriteColors, palette: pFavorite}
+  endif
+
+  return {}
+enddef
+
+def PasteColor(): Action
+  return (): bool => {
+    if @" =~ '\m^#\=[A-Fa-f0-9]\{6}$'
+      SaveToRecent()
+      SetColor(@"[0] == '#' ? @" : '#' .. @")
+    endif
+
+    return true
+  }
+enddef
+
+def PickColorFromPalette(bufnr: number): Action
+  def Pick(colors: list<string>, n: number, palette: react.Property)
+    SaveToRecent()
+    SetColor(colors[n])
+  enddef
+
+  return (): bool => {
+    var info = PaletteInfo(bufnr)
+
+    if empty(info)
+      return false
+    endif
+
+    return ActOnPalette(info.palette, info.rowNum, Pick)
+  }
+enddef
+
+def RemoveColorFromPalette(bufnr: number, lastLine: number): Action
+  def Remove(colors: list<string>, n: number, palette: react.Property)
+    remove(colors, n)
+    palette.Set(colors, true)
+  enddef
+
+  return (): bool => {
+    var info = PaletteInfo(bufnr)
+
+    if empty(info)
+      return false
+    endif
+
+    var palette: react.Property = info.palette
+
+    react.Transaction(() => {
+      ActOnPalette(palette, info.rowNum, Remove)
+
+      if empty(palette.Get())
+        SelectPrev(bufnr, lastLine)()
+      endif
+    })
+
+    if palette is pFavorite && !empty(sFavoritePath)
+      SavePalette(palette.Get(), sFavoritePath)
+    endif
+
+    return true
+  }
+enddef
+
+def SelectNext(bufnr: number): Action
+  return (): bool => {
+    var textProp = FindTextPropertyByID(bufnr, SelectedID())
+    textProp = NextSelectable(bufnr, textProp.lnum)
+    SetSelectedID(textProp.id)
+    return true
+  }
+enddef
+
+def SelectPrev(bufnr: number, lastLine: number): Action
+  return (): bool => {
+    var textProp = FindTextPropertyByID(bufnr, SelectedID())
+    textProp = PrevSelectable(bufnr, textProp.lnum, lastLine)
+    SetSelectedID(textProp.id)
+    return true
+  }
+enddef
+
+def SwitchToGrayPane(): Action
+  return (): bool => {
+    react.Transaction(() => {
+      SaveToRecent()
+      SetGray(libcolor.Hex2Gray(Color()))
+      SetEdited(false)
+      SetSelectedID(kGrayscaleSlider)
+      SetPane(kGrayPane)
+    })
+    return true
+  }
+enddef
+
+def SwitchToHelpPane(): Action
+  return (): bool => {
+    SetPane(kHelpPane)
+    return true
+  }
+enddef
+
+def SwitchToHSBPane(): Action
+  return (): bool => {
+    react.Transaction(() => {
+      SetEdited(false)
+      SetSelectedID(kHueSlider)
+      var [h, s, b] = libcolor.Hex2Hsv(Color())
+      SetHue(h)
+      SetSaturation(s)
+      SetBrightness(b)
+      SetPane(kHSBPane)
+    })
+    return true
+  }
+enddef
+
+def SwitchToRGBPane(): Action
+  return (): bool => {
+    react.Transaction(() => {
+      SetEdited(false)
+      SetSelectedID(kRedSlider)
+      SetPane(kRGBPane)
+    })
+    return true
+  }
+enddef
+
+def ToggleStyleAttribute(attr: string): Action
+  return (): bool => {
+    var currentStyle: dict<bool> = Style()
 
     if attr[0 : 4] == 'under'
-      const wasOn = currentStyle[attr]
+      var wasOn = currentStyle[attr]
 
       currentStyle.underline   = false
       currentStyle.undercurl   = false
@@ -1088,561 +1556,127 @@ def ToggleStyleAttribute(attr: string): func(): bool
       currentStyle[attr] = !currentStyle[attr]
     endif
 
-    Style.Set(currentStyle)
+    SetStyle(currentStyle, true)
+
     return true
   }
 enddef
 
-def ClearColor(winID: number): func(): bool
-  return (): bool => {
-    Color.Set('NONE')
-    Notification(winID, $'[{FgBgS.Get()}] Color cleared')
-    return true
-  }
+def TrackCursorAutoCmd()
+  augroup StylePicker
+    autocmd!
+    autocmd CursorMoved * SetHiGroup(HiGroupUnderCursor())
+  augroup END
 enddef
 
-def SwitchToRGBPane()
-  react.Transaction(() => {
-    SelectedID.Set(ID.RED_SLIDER)
-    Pane.Set(RGB_PANE)
-  })
-enddef
-
-def SwitchToHSBPane()
-  react.Transaction(() => {
-    SelectedID.Set(ID.H_SLIDER)
-    HSBColor.Set((): list<number> => libcolor.Hex2Hsv(Color.Get()))
-    Pane.Set(HSB_PANE)
-  })
-enddef
-
-def SwitchToGrayPane()
-  react.Transaction(() => {
-    SelectedID.Set(ID.GRAY_SLIDER)
-    Pane.Set(GRAY_PANE)
-  })
-enddef
-
-def SwitchToHelpPane()
-  Pane.Set(HELP_PANE)
-enddef
-
-def SwitchPane(pane: number): func(): bool
-  const Switch = {
-    [RGB_PANE ]: SwitchToRGBPane,
-    [HSB_PANE ]: SwitchToHSBPane,
-    [GRAY_PANE]: SwitchToGrayPane,
-    [HELP_PANE]: SwitchToHelpPane,
-  }
-
-  return (): bool => {
-    Switch[pane]()
-    return true
-  }
-enddef
-
-def SetActionMap(winID: number)
-  gActionMap = {
-      [KEYMAP['add-to-favorite'     ]]: AddToFavorite(winID),
-      [KEYMAP['bot'                 ]]: GoToBottom(winID),
-      [KEYMAP['cancel'              ]]: Cancel(winID),
-      [KEYMAP['clear-color'         ]]: ClearColor(winID),
-      [KEYMAP['close'               ]]: Close(winID),
-      [KEYMAP['decrement'           ]]: Decrement(winID),
-      [KEYMAP['down'                ]]: SelectNext(winID),
-      [KEYMAP['fg<bg<sp'            ]]: FgBgSPrev(),
-      [KEYMAP['fg>bg>sp'            ]]: FgBgSNext(),
-      [KEYMAP['gray-pane'           ]]: SwitchPane(GRAY_PANE),
-      [KEYMAP['help'                ]]: SwitchPane(HELP_PANE),
-      [KEYMAP['hsb-pane'            ]]: SwitchPane(HSB_PANE),
-      [KEYMAP['increment'           ]]: Increment(winID),
-      [KEYMAP['paste'               ]]: PasteColor(winID),
-      [KEYMAP['pick-from-palette'   ]]: PickColor(winID),
-      [KEYMAP['remove-from-palette' ]]: RemoveColor(winID),
-      [KEYMAP['rgb-pane'            ]]: SwitchPane(RGB_PANE),
-      [KEYMAP['set-color'           ]]: ChooseColor(),
-      [KEYMAP['set-higroup'         ]]: ChooseHiGrp(),
-      [KEYMAP['toggle-bold'         ]]: ToggleStyleAttribute('bold'),
-      [KEYMAP['toggle-italic'       ]]: ToggleStyleAttribute('italic'),
-      [KEYMAP['toggle-reverse'      ]]: ToggleStyleAttribute('reverse'),
-      [KEYMAP['toggle-standout'     ]]: ToggleStyleAttribute('standout'),
-      [KEYMAP['toggle-strikethrough']]: ToggleStyleAttribute('strikethrough'),
-      [KEYMAP['toggle-undercurl'    ]]: ToggleStyleAttribute('undercurl'),
-      [KEYMAP['toggle-underdashed'  ]]: ToggleStyleAttribute('underdashed'),
-      [KEYMAP['toggle-underdotted'  ]]: ToggleStyleAttribute('underdotted'),
-      [KEYMAP['toggle-underdouble'  ]]: ToggleStyleAttribute('underdouble'),
-      [KEYMAP['toggle-underline'    ]]: ToggleStyleAttribute('underline'),
-      [KEYMAP['top'                 ]]: GoToTop(winID),
-      [KEYMAP['up'                  ]]: SelectPrev(winID),
-      [KEYMAP['yank'                ]]: YankColor(winID),
-  }
-enddef
-# }}}
-
-# Sliders {{{
-const DEFAULT_SLIDER_SYMBOLS = get(g:, 'stylepicker_ascii', false)
-  ? [" ", ".", ":", "!", "|", "/", "-", "=", "#"]
-  : [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
-
-# NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
-def Slider(id: number, name: string, value: number, selected: bool, max = 255, min = 0): RichText
-  const gutter    = Gutter(selected)
-  const width     = PopupWidth() - strchars(gutter) - 6
-  const range     = max + 1 - min
-  const whole     = value * width / range
-  const frac      = value * width / (1.0 * range) - whole
-  const bar       = repeat(DEFAULT_SLIDER_SYMBOLS[8], whole)
-  const part_char = DEFAULT_SLIDER_SYMBOLS[1 + float2nr(floor(frac * 8))]
-
-  return Text(printf("%s%s %3d %s%s", gutter, name, value, bar, part_char))
-    ->Label(len(gutter) + 1, 1)
-    ->Tag(Prop.SLIDER)
-    ->Tag(Prop.SELECTABLE, id)
-enddef
-# }}}
-
-# View and VStack {{{
-type View = func(): list<RichText>
-
-def VStack(...views: list<any>): View
-  return (): list<RichText> => {
-    var text: list<RichText> = []
-
-    for V in views
-      text->extend(V())
-    endfor
-
-    return text
-  }
-enddef
-# }}}
-# BlankView {{{
-def BlankView(): list<RichText>
-  return [Blank()]
-enddef
-
-var BlankViewMemo: any
-# }}}
-# TitleView {{{
-var tv = 0
-def TitleView(): list<RichText>
-  ++tv
-  echomsg $'DEBUG: recalculating TitleView {tv}' expand('<stack>')
-  const attrs  = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
-  const width  = PopupWidth()
-  const name   = HiGrp.Get()
-  const offset = width - len(attrs) + 1
-  const spaces = repeat(' ', width - strchars(name) - strchars(FgBgS.Get()) - strchars(attrs) - 3)
-  const text   = $"{name} [{FgBgS.Get()}]{spaces}{attrs}"
-  const style  = Style.Get()
-
-  return [Text(text)
-    ->Title(1, strchars(name) + strchars(FgBgS.Get()) + 3)
-    ->OnOff(style.bold,          offset,     1)
-    ->OnOff(style.italic,        offset + 1, 1)
-    ->OnOff(style.underline,     offset + 2, 1)
-    ->OnOff(style.reverse,       offset + 3, 1)
-    ->OnOff(style.standout,      offset + 4, 1)
-    ->OnOff(style.strikethrough, offset + 5, 1)
-  ]
-enddef
-
-var TitleViewMemo: any
-# }}}
-# StepView {{{
-def StepView(): list<RichText>
-  const text = printf('Step  %02d', Step.Get())
-  return [Text(text)->Label(1, 4)]
-enddef
-
-var StepViewMemo: any
-# }}}
-# ColorInfoView {{{
-def ColorInfoView(): list<RichText>
-  const curColor    = Color.Get()
-  const altColor    = AltColor()
-  const approxCol   = libcolor.Approximate(curColor)
-  const approxAlt   = libcolor.Approximate(altColor)
-  const contrast    = libcolor.ContrastColor(curColor)
-  const contrastAlt = libcolor.Approximate(contrast)
-  const guiScore    = ComputeScore(curColor, altColor)
-  const termScore   = ComputeScore(approxCol.hex, approxAlt.hex)
-  const delta       = printf("%.1f", approxCol.delta)[ : 2]
-  const guiGuess    = (curColor != HiGroupColorAttr(HiGrp.Get(), FgBgS.Get(), 'gui') ? '!' : ' ')
-  const ctermGuess  = (string(approxCol.xterm) != HiGroupColorAttr(HiGrp.Get(), FgBgS.Get(), 'cterm') ? '!' : ' ')
-
-  execute $'hi stylePickerGuiColor guifg={contrast} guibg={curColor} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
-  execute $'hi stylePickerTermColor guifg={contrast} guibg={approxCol.hex} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
-
-  const info = $' {guiGuess}   {ctermGuess}   %s %-5S %3d/%s %-5S Δ{delta}'
-  return [
-    Text(printf(info,
-      curColor[1 : ],
-      repeat(Star(), guiScore),
-      approxCol.xterm,
-      approxCol.hex[1 : ],
-      repeat(Star(), termScore)))->GuiHighlight(1, 3)->CtermHighlight(5, 3)
-  ]
-enddef
-
-var ColorInfoViewMemo: any
-# }}}
-# QuotationView {{{
-def QuotationView(): list<RichText>
-  return [Text(Center(Quote(), PopupWidth()))->CurrentHighlight()]
-enddef
-
-var QuotationViewMemo: any
-# }}}
-# RecentView and FavoriteView {{{
-def SyncPaletteHighlight(bufnr: number, prop: string, Palette: react.Property)
-  const prefix = $'stylePicker{prop}'
-
-  react.CreateEffect(() => {
-    const palette: list<string> = Palette.Get()
-    var i = 0
-
-    while i < len(palette)
-      const hiGroup  = $'{prefix}{i}'
-      const propName = $'{prop}{i}'
-      const hexCol   = palette[i]
-      const approx   = libcolor.Approximate(hexCol)
-
-      execute $'hi {hiGroup} guibg={hexCol} ctermbg={approx.xterm}'
-      prop_type_delete(propName, {bufnr: bufnr})
-      prop_type_add(propName, {bufnr: bufnr, highlight: hiGroup})
-      ++i
-    endwhile
-  })
-enddef
-
-var kr = 0
-
-def BuildPaletteView(
-    Palette:     react.Property,
-    title:       string,
-    prop:        string, # Prop.RECENT, Prop.FAVORITE
-    baseID:      number, # First text property ID for the view (incremented by one for each additional line)
-    alwaysVisible = false
-    ): View
-  const emptyPaletteText: list<RichText> = alwaysVisible ? [Label(Text(title)), Blank(), Blank()] : []
-
-  return (): list<RichText> => {
-    ++kr
-    echomsg $'DEBUG: rebuilding {prop} palette {kr}'
-    const palette: list<string> = Palette.Get()
-
-    if empty(palette)
-      return emptyPaletteText
-    endif
-
-    var paletteText = [Label(Text(title))]
-    var i = 0
-
-    while i < len(palette)
-      const lineColors  = palette[(i) : (i + NUM_COLORS_PER_LINE - 1)]
-      const indexes     = range(len(lineColors))
-      const rowNum      = i / NUM_COLORS_PER_LINE
-      const id          = baseID + rowNum
-      const selectedID  = SelectedID.Get()
-      const gutter      = Gutter(selectedID == id)
-      var   colorStrip  = Text(gutter .. repeat(' ', PopupWidth() - strdisplaywidth(gutter)))
-
-      if i == 0
-        paletteText->add(
-          Label(Text(repeat(' ', strdisplaywidth(gutter) + 1) .. join(indexes, '   ')))
-        )
-      else
-        paletteText->add(Blank())
-      endif
-
-      for k in indexes
-        const m = i + k
-        const propName = $'{prop}{m}'
-        colorStrip = colorStrip->Styled(propName, len(gutter) + 4 * k + 1, 3)
-      endfor
-
-      colorStrip = colorStrip->Tag(prop, rowNum)->Tag(Prop.SELECTABLE, id)
-      paletteText->add(colorStrip)
-      i += NUM_COLORS_PER_LINE
-    endwhile
-
-    return paletteText
-  }
-enddef
-
-const RecentView   = BuildPaletteView(Recent,   'Recent Colors',   Prop.RECENT,   ID.RECENT_COLORS,   true)
-const FavoriteView = BuildPaletteView(Favorite, 'Favorite Colors', Prop.FAVORITE, ID.FAVORITE_COLORS, false)
-
-var RecentViewMemo: any
-var FavoriteViewMemo: any
-# }}}
-
-# RGB Pane {{{
-def RGBSliderView(): list<RichText>
-  const [red, green, blue] = libcolor.Hex2Rgb(Color.Get())
-  const selectedID         = SelectedID.Get()
-
-  return [
-    Slider(ID.RED_SLIDER,   'R', red,   selectedID == ID.RED_SLIDER),
-    Slider(ID.GREEN_SLIDER, 'G', green, selectedID == ID.GREEN_SLIDER),
-    Slider(ID.BLUE_SLIDER,  'B', blue,  selectedID == ID.BLUE_SLIDER),
-  ]
-enddef
-
-def RgbPane(winID: number)
-  const RgbView = VStack(
-    TitleViewMemo,
-    BlankViewMemo,
-    RGBSliderView,
-    StepViewMemo,
-    BlankViewMemo,
-    ColorInfoViewMemo,
-    BlankViewMemo,
-    QuotationViewMemo,
-    BlankViewMemo,
-    RecentViewMemo,
-    BlankViewMemo,
-    FavoriteViewMemo,
-  )
-
-  react.CreateEffect(() => {
-    if Pane.Get() != RGB_PANE
-      return
-    endif
-
-    popup_settext(winID, RgbView())
-    echomsg $'DEBUG: {winID} redrawn (RGB Pane)'
-    ++gNumRedraws
-
-    if DEBUG && gNumRedraws > 1
-      Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
-    endif
-  })
-enddef
-# }}}
-# HSB Pane {{{
-var ii = 0
-def HSBSliderView(): list<RichText>
-  if Pane.Get() != HSB_PANE
-    return []
+def UntrackCursorAutoCmd()
+  if exists('#StylePicker')
+    autocmd! StylePicker
+    augroup! StylePicker
   endif
-
-  ++ii
-  echomsg $'DEBUG: recomputing HSBSliderView ({ii})'
-  const HSB = HSBColor.Get()
-  const [h, s, b] = HSB()
-  const selectedID = SelectedID.Get()
-
-  return [
-    Slider(ID.H_SLIDER, 'H', h, selectedID == ID.H_SLIDER, 359),
-    Slider(ID.S_SLIDER, 'S', s, selectedID == ID.S_SLIDER, 100),
-    Slider(ID.B_SLIDER, 'B', b, selectedID == ID.B_SLIDER, 100),
-  ]
 enddef
 
-def HsbPane(winID: number)
-  const HsbView = VStack(
-    TitleViewMemo,
-    BlankViewMemo,
-    HSBSliderView,
-    StepViewMemo,
-    BlankViewMemo,
-    ColorInfoViewMemo,
-    BlankViewMemo,
-    QuotationViewMemo,
-    BlankViewMemo,
-    RecentViewMemo,
-    BlankViewMemo,
-    FavoriteViewMemo,
-  )
-
-  react.CreateEffect(() => {
-    if Pane.Get() != HSB_PANE
-      return
+def ToggleTrackCursor(): Action
+  return (): bool => {
+    if exists('#StylePicker')
+      UntrackCursorAutoCmd()
+    else
+      TrackCursorAutoCmd()
     endif
 
-    popup_settext(winID, HsbView())
-    ++gNumRedraws
+    return true
+  }
+enddef
 
-    if DEBUG && gNumRedraws > 1
-      Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
+def YankColor(winID: number): Action
+  var bufnr = winbufnr(winID)
+
+  def Yank(colors: list<string>, n: number, palette: react.Property)
+    @" = colors[n] # TODO: allow setting register via user option
+  enddef
+
+  return (): bool => {
+    var info = PaletteInfo(bufnr)
+
+    if empty(info)
+      @" = Color()
+      Notification(winID, 'Color yanked: ' .. @")
+    else
+      if ActOnPalette(info.palette, info.rowNum, Yank)
+        Notification(winID, 'Color yanked: ' .. @")
+      endif
     endif
-  })
+
+    return true
+  }
 enddef
 # }}}
-# Grayscale Pane {{{
-def GraySliderView(): list<RichText>
-  const gray       = libcolor.Hex2Gray(Color.Get())
-  const isSelected = SelectedID.Get() == ID.GRAY_SLIDER
-  const gutterWidth = strdisplaywidth(Gutter(isSelected), 0)
-
-  return [
-    Label(Text('Grayscale')),
-    Blank(PopupWidth())
-    ->Styled(Prop.GRAY000, gutterWidth + 6, 2)
-    ->Styled(Prop.GRAY025, gutterWidth + 14, 2)
-    ->Styled(Prop.GRAY050, gutterWidth + 22, 2)
-    ->Styled(Prop.GRAY075, gutterWidth + 30, 2)
-    ->Styled(Prop.GRAY100, gutterWidth + 38, 2),
-    Slider(ID.GRAY_SLIDER, 'G', gray, isSelected),
-  ]
+# Key map {{{
+def KeySymbol(action: string): string
+  const key = sKeymap[action]
+  return get(kPrettyKey, key, key)
 enddef
 
-def GrayscalePane(winID: number)
-  const GrayscaleView = VStack(
-    TitleViewMemo,
-    BlankViewMemo,
-    GraySliderView,
-    StepViewMemo,
-    BlankViewMemo,
-    ColorInfoViewMemo,
-    BlankViewMemo,
-    QuotationViewMemo,
-    BlankViewMemo,
-    RecentViewMemo,
-    BlankViewMemo,
-    FavoriteViewMemo,
-  )
+def SetActionMap(winID: number, keymap = sKeymap, favoritePath = sFavoritePath)
+  var bufnr = winbufnr(winID)
 
-  react.CreateEffect(() => {
-    if Pane.Get() != GRAY_PANE
-      return
-    endif
-
-    popup_settext(winID, GrayscaleView())
-    ++gNumRedraws
-
-    if DEBUG && gNumRedraws > 1
-      Notification(winID, $'Multiple ({gNumRedraws}) redraws!')
-    endif
-  })
+  sActionMap = {
+      [keymap['add-to-favorite'     ]]: AddToFavorite(winID, favoritePath),
+      [keymap['bot'                 ]]: GoToBottom(bufnr, line('$', winID)),
+      [keymap['cancel'              ]]: Cancel(winID),
+      [keymap['clear-color'         ]]: ClearColor(winID),
+      [keymap['close'               ]]: Close(winID),
+      [keymap['decrement'           ]]: Decrement(winID),
+      [keymap['down'                ]]: SelectNext(bufnr),
+      [keymap['fg<bg<sp'            ]]: FgBgSPrev(),
+      [keymap['fg>bg>sp'            ]]: FgBgSNext(),
+      [keymap['gray-pane'           ]]: SwitchToGrayPane(),
+      [keymap['help'                ]]: SwitchToHelpPane(),
+      [keymap['hsb-pane'            ]]: SwitchToHSBPane(),
+      [keymap['increment'           ]]: Increment(winID),
+      [keymap['paste'               ]]: PasteColor(),
+      [keymap['pick-from-palette'   ]]: PickColorFromPalette(bufnr),
+      [keymap['remove-from-palette' ]]: RemoveColorFromPalette(bufnr, line('$', winID)),
+      [keymap['rgb-pane'            ]]: SwitchToRGBPane(),
+      [keymap['set-color'           ]]: ChooseColor(),
+      [keymap['set-higroup'         ]]: ChooseHiGrp(),
+      [keymap['toggle-bold'         ]]: ToggleStyleAttribute('bold'),
+      [keymap['toggle-italic'       ]]: ToggleStyleAttribute('italic'),
+      [keymap['toggle-reverse'      ]]: ToggleStyleAttribute('reverse'),
+      [keymap['toggle-standout'     ]]: ToggleStyleAttribute('standout'),
+      [keymap['toggle-strikethrough']]: ToggleStyleAttribute('strikethrough'),
+      [keymap['toggle-tracking'     ]]: ToggleTrackCursor(),
+      [keymap['toggle-undercurl'    ]]: ToggleStyleAttribute('undercurl'),
+      [keymap['toggle-underdashed'  ]]: ToggleStyleAttribute('underdashed'),
+      [keymap['toggle-underdotted'  ]]: ToggleStyleAttribute('underdotted'),
+      [keymap['toggle-underdouble'  ]]: ToggleStyleAttribute('underdouble'),
+      [keymap['toggle-underline'    ]]: ToggleStyleAttribute('underline'),
+      [keymap['top'                 ]]: GoToTop(bufnr),
+      [keymap['up'                  ]]: SelectPrev(bufnr, line('$', winID)),
+      [keymap['yank'                ]]: YankColor(winID),
+  }
 enddef
 # }}}
-# Help Pane {{{
-def HelpPane(winID: number)
-  var s = [
-    KeySymbol('up'),                   # 00
-    KeySymbol('down'),                 # 01
-    KeySymbol('top'),                  # 02
-    KeySymbol('bot'),                  # 03
-    KeySymbol('fg>bg>sp'),             # 04
-    KeySymbol('fg<bg<sp'),             # 05
-    KeySymbol('rgb-pane'),             # 06
-    KeySymbol('hsb-pane'),             # 07
-    KeySymbol('gray-pane'),            # 08
-    KeySymbol('close'),                # 09
-    KeySymbol('cancel'),               # 10
-    KeySymbol('help'),                 # 11
-    KeySymbol('toggle-bold'),          # 12
-    KeySymbol('toggle-italic'),        # 13
-    KeySymbol('toggle-reverse'),       # 14
-    KeySymbol('toggle-standout'),      # 15
-    KeySymbol('toggle-strikethrough'), # 16
-    KeySymbol('toggle-underline'),     # 17
-    KeySymbol('toggle-undercurl'),     # 18
-    KeySymbol('toggle-underdashed'),   # 19
-    KeySymbol('toggle-underdotted'),   # 20
-    KeySymbol('toggle-underdouble'),   # 21
-    KeySymbol('increment'),            # 22
-    KeySymbol('decrement'),            # 23
-    KeySymbol('yank'),                 # 24
-    KeySymbol('paste'),                # 25
-    KeySymbol('set-color'),            # 26
-    KeySymbol('set-higroup'),          # 27
-    KeySymbol('clear-color'),          # 28
-    KeySymbol('add-to-favorite'),      # 29
-    KeySymbol('yank'),                 # 30
-    KeySymbol('remove-from-palette'),  # 31
-    KeySymbol('pick-from-palette'),    # 32
-  ]
-  const maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
-
-  # Pad with spaces, so all symbol strings have the same width
-  map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
-
-  react.CreateEffect(() => {
-    if Pane.Get() != HELP_PANE
-      return
-    endif
-
-    popup_settext(winID, [
-      Title(Text('Keyboard Controls')),
-      Blank(),
-      Label(Text('Popup')),
-      Text($'{s[00]} Move up           {s[06]} RGB Pane'),
-      Text($'{s[01]} Move down         {s[07]} HSB Pane'),
-      Text($'{s[02]} Go to top         {s[08]} Grayscale'),
-      Text($'{s[03]} Go to bottom      {s[09]} Close'),
-      Text($'{s[04]} fg->bg->sp        {s[10]} Close and reset'),
-      Text($'{s[05]} sp->bg->fg        {s[11]} Help pane'),
-      Blank(),
-      Label(Text('Attributes')),
-      Text($'{s[12]} Toggle boldface   {s[17]} Toggle underline'),
-      Text($'{s[13]} Toggle italics    {s[18]} Toggle undercurl'),
-      Text($'{s[14]} Toggle reverse    {s[19]} Toggle underdaashed'),
-      Text($'{s[15]} Toggle standout   {s[20]} Toggle underdotted'),
-      Text($'{s[16]} Toggle strikethr. {s[21]} Toggle underdouble'),
-      Blank(),
-      Label(Text('Color')),
-      Text($'{s[22]} Increment value   {s[26]} Set value'),
-      Text($'{s[23]} Decrement value   {s[27]} Set hi group'),
-      Text($'{s[24]} Yank color        {s[28]} Clear color'),
-      Text($'{s[25]} Paste color       {s[29]} Add to favorites'),
-      Blank(),
-      Label(Text('Recent & Favorites')),
-      Text($'{s[30]} Yank color        {s[32]} Pick color'),
-      Text($'{s[31]} Delete color'),
-    ])
-  })
-enddef
-# }}}
-
-def InitEffects(winID: number, bufnr: number)
-  SyncPaletteHighlight(bufnr, Prop.RECENT,   Recent)
-  SyncPaletteHighlight(bufnr, Prop.FAVORITE, Favorite)
-
-  react.CreateEffect(() => {
-    prop_type_change(Prop.CURRENT_HIGHLIGHT, {bufnr: bufnr, highlight: HiGrp.Get()})
-  })
-
-  BlankViewMemo     = react.CreateMemo(BlankView,     POOL)
-  TitleViewMemo     = react.CreateMemo(TitleView,     POOL)
-  StepViewMemo      = react.CreateMemo(StepView,      POOL)
-  ColorInfoViewMemo = react.CreateMemo(ColorInfoView, POOL)
-  QuotationViewMemo = react.CreateMemo(QuotationView, POOL)
-  RecentViewMemo    = react.CreateMemo(RecentView,    POOL)
-  FavoriteViewMemo  = react.CreateMemo(FavoriteView,  POOL)
-
-  RgbPane(winID)
-  HsbPane(winID)
-  GrayscalePane(winID)
-  HelpPane(winID)
-enddef
-
 # Callbacks {{{
 def ClosedCallback(winID: number, result: any = '')
-  if exists('#stylepicker')
-    autocmd! stylepicker
-    augroup! stylepicker
-  endif
+  UntrackCursorAutoCmd()
 
-  gX = popup_getoptions(winID).col
-  gY = popup_getoptions(winID).line
+  sX = popup_getoptions(winID).col
+  sY = popup_getoptions(winID).line
+  sWinID = -1
 enddef
-# }}}
 
 def HandleDigit(winID: number, digit: number): bool
-  const isSlider = IsSlider(winID, SelectedID.Get())
+  var isSlider = (get(sSliderByID, SelectedID(), null_object) != null)
 
   if isSlider
     var newStep = digit
-    var elapsed = gTimeLastDigitPressed->reltime()
+    var elapsed = sTimeLastDigitPressed->reltime()
 
-    gTimeLastDigitPressed = reltime()
+    sTimeLastDigitPressed = reltime()
 
-    if elapsed->reltimefloat() < get(g:, 'stylepicker_step_delay', 1.0)
-      newStep = 10 * Step.Get() + newStep
+    if elapsed->reltimefloat() <= sStepDelay
+      newStep = 10 * Step() + newStep
 
       if newStep > 99
         newStep = digit
@@ -1653,56 +1687,54 @@ def HandleDigit(winID: number, digit: number): bool
       newStep = 1
     endif
 
-    Step.Set(newStep)
+    SetStep(newStep)
   endif
 
   return isSlider
 enddef
 
-def ProcessKeyPress(winID: number, key: string): bool
-  if get(g:, 'stylepicker_disable_keys', false)
+def HandleEvent(winID: number, key: string): bool
+  if Pane() == kHelpPane && key !~ '\m[RGH?xX]'
     return false
   endif
 
-  gNumRedraws = 0
-
-  if Pane.Get() == HELP_PANE && key !~ '\m[RGH?xX]'
-    return false
-  endif
+  var handled = false
 
   if key =~ '\m\d'
-    return HandleDigit(winID, str2nr(key))
+    handled = HandleDigit(winID, str2nr(key))
+  elseif has_key(sActionMap, key)
+    handled = sActionMap[key]()
   endif
 
-  if has_key(gActionMap, key)
-    return gActionMap[key]()
-  endif
-
-  return false
+  return handled
 enddef
-
-def StylePicker(hiGroup: string = '', x = gX, y = gY)
-  DEBUG = get(g:, 'stylepicker_debug', false)
-
-  gEdited = {fg: false, bg: false, sp: false}
-  gNumRedraws = 0
-  gFavoritePath = get(g:, 'stylepicker_favorite_path', '')
-
-  const winID = popup_create('', {
+# }}}
+# Style Picker Popup {{{
+def StylePicker(
+    hiGroup:         string,
+    xPos:            number,
+    yPos:            number,
+    zIndex:          number       = 100,
+    background:      string       = sBackground,
+    border:          list<string> = sBorder,
+    minWidth:        number       = sPopupWidth,
+    allowKeyMapping: bool         = sAllowKeyMapping
+    ): number
+  var winID = popup_create('', {
     border:      [1, 1, 1, 1],
-    borderchars: get(g:, 'stylepicker_borderchars', ['─', '│', '─', '│', '╭', '╮', '╯', '╰']),
+    borderchars: border,
     callback:    ClosedCallback,
     close:       'button',
-    col:         x,
+    col:         xPos,
     cursorline:  0,
     drag:        1,
-    filter:      ProcessKeyPress,
+    filter:      HandleEvent,
     filtermode:  'n',
     hidden:      true,
-    highlight:   get(g:, 'stylepicker_bg', 'Normal'),
-    line:        y,
-    mapping:     get(g:, 'stylepicker_mapping', true),
-    minwidth:    max([39 + strdisplaywidth(Marker()), 42]),
+    highlight:   background,
+    line:        yPos,
+    mapping:     allowKeyMapping,
+    minwidth:    minWidth,
     padding:     [0, 1, 0, 1],
     pos:         'topleft',
     resize:      0,
@@ -1710,36 +1742,34 @@ def StylePicker(hiGroup: string = '', x = gX, y = gY)
     tabpage:     0,
     title:       '',
     wrap:        0,
-    zindex:      200,
+    zindex:      zIndex,
   })
   const bufnr = winbufnr(winID)
 
   setbufvar(bufnr, '&tabstop', &tabstop)  # Inherit global tabstop value
 
-  react.Reinit() # TODO: REMOVE ME
-  ResetHighlight()
-  SetPropertyTypes(bufnr)
-  InitProperties(winID, RGB_PANE, hiGroup)
-  InitEffects(winID, bufnr)
+  InitHighlight()
+  InitTextPropertyTypes(bufnr)
+  InitProperties(hiGroup)
+  InitEffects(winID)
   SetActionMap(winID)
 
   if empty(hiGroup)
-    augroup stylepicker
-      autocmd!
-      autocmd CursorMoved * HiGrp.Set(HiGroupUnderCursor())
-    augroup END
+    TrackCursorAutoCmd()
   endif
 
   popup_show(winID)
-enddef
 
+  return winID
+enddef
+# }}}
 # Public interface {{{
 export def Open(hiGroup: string = '')
-  if PopupExists()
-    # TODO
-    popup_show(WinID.Get())
-  else
-    StylePicker(hiGroup)
+  if sWinID > 0
+    popup_close(sWinID)
   endif
+
+  InitInternalState()
+  sWinID = StylePicker(hiGroup, sX, sY)
 enddef
 # }}}
