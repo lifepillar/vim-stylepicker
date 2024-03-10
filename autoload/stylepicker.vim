@@ -1372,9 +1372,11 @@ def FgBgSPrev(): Action
   }
 enddef
 
-def GoToBottom(bufnr: number, lastLine: number): Action
+def GoToBottom(winID: number): Action
+  var bufnr = winbufnr(winID)
+
   return (): bool => {
-    SetSelectedID(LastSelectable(bufnr, lastLine).id)
+    SetSelectedID(LastSelectable(bufnr, line('$', winID)).id)
     return true
   }
 enddef
@@ -1442,7 +1444,9 @@ def PickColorFromPalette(bufnr: number): Action
   }
 enddef
 
-def RemoveColorFromPalette(bufnr: number, lastLine: number): Action
+def RemoveColorFromPalette(winID: number): Action
+  var bufnr = winbufnr(winID)
+
   def Remove(colors: list<string>, n: number, palette: react.Property)
     remove(colors, n)
     palette.Set(colors, true)
@@ -1461,7 +1465,7 @@ def RemoveColorFromPalette(bufnr: number, lastLine: number): Action
       ActOnPalette(palette, info.rowNum, Remove)
 
       if empty(palette.Get())
-        SelectPrev(bufnr, lastLine)()
+        SelectPrev(winID)()
       endif
     })
 
@@ -1482,10 +1486,12 @@ def SelectNext(bufnr: number): Action
   }
 enddef
 
-def SelectPrev(bufnr: number, lastLine: number): Action
+def SelectPrev(winID: number): Action
+  var bufnr = winbufnr(winID)
+
   return (): bool => {
     var textProp = FindTextPropertyByID(bufnr, SelectedID())
-    textProp = PrevSelectable(bufnr, textProp.lnum, lastLine)
+    textProp = PrevSelectable(bufnr, textProp.lnum, line('$', winID))
     SetSelectedID(textProp.id)
     return true
   }
@@ -1624,7 +1630,7 @@ def SetActionMap(winID: number, keymap = sKeymap, favoritePath = sFavoritePath)
 
   sActionMap = {
       [keymap['add-to-favorite'     ]]: AddToFavorite(winID, favoritePath),
-      [keymap['bot'                 ]]: GoToBottom(bufnr, line('$', winID)),
+      [keymap['bot'                 ]]: GoToBottom(winID),
       [keymap['cancel'              ]]: Cancel(winID),
       [keymap['clear-color'         ]]: ClearColor(winID),
       [keymap['close'               ]]: Close(winID),
@@ -1638,7 +1644,7 @@ def SetActionMap(winID: number, keymap = sKeymap, favoritePath = sFavoritePath)
       [keymap['increment'           ]]: Increment(winID),
       [keymap['paste'               ]]: PasteColor(),
       [keymap['pick-from-palette'   ]]: PickColorFromPalette(bufnr),
-      [keymap['remove-from-palette' ]]: RemoveColorFromPalette(bufnr, line('$', winID)),
+      [keymap['remove-from-palette' ]]: RemoveColorFromPalette(winID),
       [keymap['rgb-pane'            ]]: SwitchToRGBPane(),
       [keymap['set-color'           ]]: ChooseColor(),
       [keymap['set-higroup'         ]]: ChooseHiGrp(),
@@ -1654,7 +1660,7 @@ def SetActionMap(winID: number, keymap = sKeymap, favoritePath = sFavoritePath)
       [keymap['toggle-underdouble'  ]]: ToggleStyleAttribute('underdouble'),
       [keymap['toggle-underline'    ]]: ToggleStyleAttribute('underline'),
       [keymap['top'                 ]]: GoToTop(bufnr),
-      [keymap['up'                  ]]: SelectPrev(bufnr, line('$', winID)),
+      [keymap['up'                  ]]: SelectPrev(winID),
       [keymap['yank'                ]]: YankColor(winID),
   }
 enddef
