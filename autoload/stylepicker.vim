@@ -28,11 +28,11 @@ var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',    1.0     
 var zindex:          number       = get(g:, 'stylepicker_zindex',       50                                      )
 # }}}
 # Internal State {{{
-var sEventHandled: bool = false  # Set to true if a key or mouse event was handled
-var sKeyCode: string = ''  # Last key pressed
-var sWinID: number = -1  # ID of the style picker popup
-var sX: number = 0 # Horizontal position of the style picker
-var sY: number = 0 # Vertical position of the style picker
+var sEventHandled: bool = false # Set to true if a key or mouse event was handled
+var sKeyCode: string = ''       # Last key pressed
+var sWinID: number = -1         # ID of the style picker popup
+var sX: number = 0              # Horizontal position of the style picker
+var sY: number = 0              # Vertical position of the style picker
 
 class Config
   static var Ascii           = () => ascii
@@ -54,6 +54,51 @@ endclass
 
 def Init()
 enddef
+# }}}
+# UI {{{
+class TextProperty
+  var type: string # Text property type (created with prop_type_add())
+  var xl:   number # 0-based start position of the property (in characters) TODO: are composed chars counted as one?
+  var xr:   number # One past the end position of the property
+  var id:   number = 1
+endclass
+
+class FrameBuffer
+  var bufnr: number
+
+  def new()
+    this.bufnr = bufadd('')
+    bufload(this.bufnr)
+  enddef
+
+  def InsertText(lnum: number, text: string)
+    # Insert at the given line number, shifting text below
+    var bufinfo = getbufinfo(this.bufnr)[0]
+    var ll = bufinfo.linecount
+
+    while ll < lnum - 1
+      appendbufline(this.bufnr, '$', '')
+      ++ll
+    endwhile
+
+    appendbufline(this.bufnr, lnum - 1, text)
+  enddef
+
+  def SetText(lnum: number, text: string)
+    # Insert at the given line number, shifting text below
+    var bufinfo = getbufinfo(this.bufnr)[0]
+    var ll = bufinfo.linecount
+
+    while ll < lnum - 1
+      appendbufline(this.bufnr, '$', '')
+      ++ll
+    endwhile
+
+    appendbufline(this.bufnr, lnum - 1, text)
+  enddef
+
+endclass
+
 # }}}
 # Highlight Groups {{{
 def InitHighlight()
