@@ -34,51 +34,6 @@ const kRecentColors            = 1024 # Each recent color line gets a +1 id
 const kFavoriteColors          = 8192 # Each favorite color line gets a +1 id
 const kFooter                  = 16384
 
-# Events
-const kActionAddToFavorites:    ActionCode = 'atf'
-const kActionBot:               ActionCode = 'bot'
-const kActionCancel:            ActionCode = 'can'
-const kActionClear:             ActionCode = 'clr'
-const kActionClose:             ActionCode = 'clo'
-const kActionDecrement:         ActionCode = 'dec'
-const kActionDown:              ActionCode = 'dwn'
-const kActionFgBgSp:            ActionCode = 'fbs'
-const kActionSpBgFg:            ActionCode = 'sbf'
-const kActionGrayPane:          ActionCode = 'gry'
-const kActionHelp:              ActionCode = 'hlp'
-const kActionHsbPane:           ActionCode = 'hsb'
-const kActionIncrement:         ActionCode = 'inc'
-const kActionLeftClick:         ActionCode = 'clk'
-const kActionPaste:             ActionCode = 'pas'
-const kActionPick:              ActionCode = 'pck'
-const kActionRemove:            ActionCode = 'rem'
-const kActionRgbPane:           ActionCode = 'rgb'
-const kActionSetColor:          ActionCode = 'scl'
-const kActionSetHiGroup:        ActionCode = 'shg'
-const kActionToggleBold:        ActionCode = 'tgb'
-const kActionToggleItalic:      ActionCode = 'tgi'
-const kActionToggleReverse:     ActionCode = 'tgr'
-const kActionToggleStandout:    ActionCode = 'tgs'
-const kActionToggleStrikeThru:  ActionCode = 'tgk'
-const kActionToggleTracking:    ActionCode = 'tgt'
-const kActionToggleUndercurl:   ActionCode = 'tg~'
-const kActionToggleUnderdotted: ActionCode = 'tg.'
-const kActionToggleUnderdashed: ActionCode = 'tg-'
-const kActionToggleUnderdouble: ActionCode = 'tg='
-const kActionToggleUnderline:   ActionCode = 'tgu'
-const kActionTop:               ActionCode = 'top'
-const kActionUp:                ActionCode = 'gup'
-const kActionYank:              ActionCode = 'ynk'
-
-# Actions in the help pane
-const kHelpAction = [
-  kActionRgbPane,
-  kActionGrayPane,
-  kActionHsbPane,
-  kActionCancel,
-  kActionClose
-]
-
 const kUltimateFallbackColor = {
   'bg': {'dark': '#000000', 'light': '#ffffff'},
   'fg': {'dark': '#ffffff', 'light': '#000000'},
@@ -101,6 +56,52 @@ const kDefaultQuotes = [
   'Vim vi repellere licet',
   'Vana gloria spica ingens est sine grano.',
 ]
+
+const kAddToFavoritesKey    = "A"
+const kBotKey               = ">"
+const kCancelKey            = "X"
+const kClearKey             = "Z"
+const kCloseKey             = "x"
+const kDecrementKey         = "\<left>"
+const kDownKey              = "\<down>"
+const kFgBgSpKey            = "\<s-tab>"
+const kSpBgFgKey            = "\<tab>"
+const kGrayPaneKey          = "G"
+const kHelpKey              = "?"
+const kHsbPaneKey           = "H"
+const kIncrementKey         = "\<right>"
+const kLeftClickKey         = "\<leftmouse>"
+const kPasteKey             = "P"
+const kPickKey              = "\<enter>"
+const kRemoveKey            = "D"
+const kRgbPaneKey           = "R"
+const kSetColorKey          = "E"
+const kSetHiGroupKey        = "N"
+const kToggleBoldKey        = "B"
+const kToggleItalicKey      = "I"
+const kToggleReverseKey     = "V"
+const kToggleStandoutKey    = "S"
+const kToggleStrikeThruKey  = "K"
+const kToggleTrackingKey    = "T"
+const kToggleUndercurlKey   = "~"
+const kToggleUnderdottedKey = "-"
+const kToggleUnderdashedKey = "."
+const kToggleUnderdoubleKey = "="
+const kToggleUnderlineKey   = "U"
+const kTopKey               = "<"
+const kUpKey                = "\<up>"
+const kYankKey              = "Y"
+
+const kPrettyKey = {
+  "\<left>":    "←",
+  "\<right>":   "→",
+  "\<up>":      "↑",
+  "\<down>":    "↓",
+  "\<tab>":     "↳",
+  "\<s-tab>":   "⇧-↳",
+  "\<enter>":   "↲",
+  "\<s-enter>": "⇧-↲",
+}
 # }}}
 # User Settings {{{
 # TODO: export user settings
@@ -169,9 +170,24 @@ def Int(cond: bool): number
   return cond ? 1 : 0
 enddef
 
+def Prettify(key: string): string
+  if Config.Ascii()
+    return key
+  endif
+
+  return get(kPrettyKey, key, key)
+enddef
+
+def KeySymbol(defaultKeyCode: string): string
+  var userKeyCode = get(Config.KeyAliases(), defaultKeyCode, defaultKeyCode)
+
+  return Prettify(userKeyCode)
+enddef
+
 def Center(text: string, width: number): string
-  const lPad = repeat(' ', (width + 1 - strwidth(text)) / 2)
-  const rPad = repeat(' ', (width - strwidth(text)) / 2)
+  var lPad = repeat(' ', (width + 1 - strwidth(text)) / 2)
+  var rPad = repeat(' ', (width - strwidth(text)) / 2)
+
   return $'{lPad}{text}{rPad}'
 enddef
 
@@ -535,17 +551,6 @@ var pColor = ColorProperty.new('#000000', sPool) # Value of the current color
 var pStyle = StyleProperty.new({}, sPool) # Dictionary of style attributes
 var [Color, SetColor] = [pColor.Get, pColor.Set]
 var [Style, SetStyle] = [pStyle.Get, pStyle.Set]
-
-def InitReactiveState(hiGroup: string)
-  SetHiGroup(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
-  SetEdited(false)
-  SetPaneID(kMainPane)
-  SetSelectedID(kRedSlider)
-
-  if !empty(Config.FavoritePath())
-    SetFavorite(LoadPalette(Config.FavoritePath()))
-  endif
-enddef
 # }}}
 # Highlight Groups {{{
 def InitHighlight()
@@ -584,6 +589,73 @@ def InitHighlight()
 enddef
 # }}}
 # Text with Properties {{{
+const kPropTypeNormal           = '_norm' # Normal text
+const kPropTypeOn               = '_on__' # Property for 'enabled' stuff
+const kPropTypeOff              = '_off_' # Property for 'disabled' stuff
+const kPropTypeSelectable       = '_slct' # Mark line as an item that can be selected
+const kPropTypeLabel            = '_labl' # Mark line as a label
+const kPropTypeSlider           = '_levl' # Mark line as a level bar (slider)
+const kPropTypeRecent           = '_mru_' # Mark line as a 'recent colors' line
+const kPropTypeFavorite         = '_fav_' # Mark line as a 'favorite colors' line
+const kPropTypeCurrentHighlight = '_curh' # To highlight text with the currently selected highglight group
+const kPropTypeWarning          = '_warn' # Highlight for warning symbols
+const kPropTypeHeader           = '_titl' # Highlight for title section
+const kPropTypeGuiHighlight     = '_gcol' # Highlight for the current GUI color
+const kPropTypeCtermHighlight   = '_tcol' # Highlight for the current cterm color
+const kPropTypeBold             = '_bold' # Highlight for bold attribute
+const kPropTypeItalic           = '_ital' # Highlight for italic attribute
+const kPropTypeUnderline        = '_ulin' # Highlight for underline attribute
+const kPropTypeUndercurl        = '_curl' # Highlight for undercurl attribute
+const kPropTypeStandout         = '_stnd' # Highlight for standout attribute
+const kPropTypeInverse          = '_invr' # Highlight for inverse attribute
+const kPropTypeStrikethrough    = '_strk' # Highlight for strikethrough attribute
+const kPropTypeGray             = '_gray' # Grayscale blocks
+const kPropTypeGray000          = '_g000' # Grayscale blocks
+const kPropTypeGray025          = '_g025' # Grayscale blocks
+const kPropTypeGray050          = '_g050' # Grayscale blocks
+const kPropTypeGray075          = '_g075' # Grayscale blocks
+const kPropTypeGray100          = '_g100' # Grayscale blocks
+
+def InitTextPropertyTypes(bufnr: number)
+  var propTypes = {
+    [kPropTypeNormal          ]: {bufnr: bufnr, highlight: 'Normal'                  },
+    [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'           },
+    [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'          },
+    [kPropTypeSelectable      ]: {bufnr: bufnr                                       },
+    [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label'                   },
+    [kPropTypeSlider          ]: {bufnr: bufnr                                       },
+    [kPropTypeRecent          ]: {bufnr: bufnr                                       },
+    [kPropTypeFavorite        ]: {bufnr: bufnr                                       },
+    [kPropTypeCurrentHighlight]: {bufnr: bufnr                                       },
+    [kPropTypeWarning         ]: {bufnr: bufnr, highlight: 'stylePickerWarning'      },
+    [kPropTypeHeader          ]: {bufnr: bufnr, highlight: 'Title'                   },
+    [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor'     },
+    [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'    },
+    [kPropTypeBold            ]: {bufnr: bufnr, highlight: 'stylePickerBold'         },
+    [kPropTypeItalic          ]: {bufnr: bufnr, highlight: 'stylePickerItalic'       },
+    [kPropTypeUnderline       ]: {bufnr: bufnr, highlight: 'stylePickerUnderline'    },
+    [kPropTypeUndercurl       ]: {bufnr: bufnr, highlight: 'stylePickerUndercurl'    },
+    [kPropTypeStandout        ]: {bufnr: bufnr, highlight: 'stylePickerStandout'     },
+    [kPropTypeInverse         ]: {bufnr: bufnr, highlight: 'stylePickerInverse'      },
+    [kPropTypeStrikethrough   ]: {bufnr: bufnr, highlight: 'stylePickerStrikethrough'},
+    [kPropTypeGray            ]: {bufnr: bufnr                                       },
+    [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'      },
+    [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'      },
+    [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'      },
+    [kPropTypeGray075         ]: {bufnr: bufnr, highlight: 'stylePickerGray075'      },
+    [kPropTypeGray100         ]: {bufnr: bufnr, highlight: 'stylePickerGray100'      },
+  }
+
+  for [propType, propValue] in items(propTypes)
+    prop_type_add(propType, propValue)
+  endfor
+
+  # Sync the text property with the current highlight group
+  react.CreateEffect(() => {
+    prop_type_change(kPropTypeCurrentHighlight, {bufnr: bufnr, highlight: HiGroup()})
+  })
+enddef
+
 class TextProperty
   var type: string     # Text property type (created with prop_type_add())
   var xl:   number     # 0-based start position of the property, in characters (composed chars not counted separately)
@@ -904,8 +976,6 @@ class ColorSliceView extends BaseSelectableView
   var _bufnr:      number
   var _header:     bool = true
 
-  static var sliceID = 0
-
   def new(
       this._paletteRef,
       this._from,
@@ -919,14 +989,13 @@ class ColorSliceView extends BaseSelectableView
     endif
 
     super.Init()
-
-    sliceID += 1
   enddef
 
   def Update()
     var palette = this._paletteRef.Get()
 
     if this._from >= len(palette)
+      this._content.Set([])
       return
     endif
 
@@ -952,11 +1021,11 @@ class ColorSliceView extends BaseSelectableView
     while k < to - from
       var hexCol   = palette[from + k]
       var approx   = libcolor.Approximate(hexCol)
-      var textProp = $'stylePickerPalette_{sliceID}_{k}'
+      var textProp = $'stylePickerPalette_{hexCol[1 : ]}_{k}'
       var column   = gutterWidth + 4 * k
 
       colorsLine->WithStyle(textProp, column, column + 3)
-      colorsLine->Tagged(kPropTypeSelectable, sliceID)
+      # colorsLine->Tagged(kPropTypeSelectable, sliceID)
 
       # TODO: use hlset()?
       execute $'hi {textProp} guibg={hexCol} ctermbg={approx.xterm}'
@@ -982,6 +1051,82 @@ class FooterView extends BaseUpdatableView
     this._content.Set([
       TextLine.new('TODO: this will be the footer')->Labeled(0, 5),
     ])
+  enddef
+endclass
+# }}}
+# Help View {{{
+class HelpView implements IView
+  def Body(): list<TextLine>
+    var s = [
+      KeySymbol(kUpKey),                # 00
+      KeySymbol(kDownKey),              # 01
+      KeySymbol(kTopKey),               # 02
+      KeySymbol(kBotKey),               # 03
+      KeySymbol(kFgBgSpKey),            # 04
+      KeySymbol(kSpBgFgKey),            # 05
+      KeySymbol(kToggleTrackingKey),    # 06
+      KeySymbol(kRgbPaneKey),           # 07
+      KeySymbol(kHsbPaneKey),           # 08
+      KeySymbol(kGrayPaneKey),          # 09
+      KeySymbol(kCloseKey),             # 10
+      KeySymbol(kCancelKey),            # 11
+      KeySymbol(kHelpKey),              # 12
+      KeySymbol(kToggleBoldKey),        # 13
+      KeySymbol(kToggleItalicKey),      # 14
+      KeySymbol(kToggleReverseKey),     # 15
+      KeySymbol(kToggleStandoutKey),    # 16
+      KeySymbol(kToggleStrikeThruKey),  # 17
+      KeySymbol(kToggleUnderlineKey),   # 18
+      KeySymbol(kToggleUndercurlKey),   # 19
+      KeySymbol(kToggleUnderdashedKey), # 20
+      KeySymbol(kToggleUnderdottedKey), # 21
+      KeySymbol(kToggleUnderdoubleKey), # 22
+      KeySymbol(kIncrementKey),         # 23
+      KeySymbol(kDecrementKey),         # 24
+      KeySymbol(kYankKey),              # 25
+      KeySymbol(kPasteKey),             # 26
+      KeySymbol(kSetColorKey),          # 27
+      KeySymbol(kSetHiGroupKey),        # 28
+      KeySymbol(kClearKey),             # 29
+      KeySymbol(kAddToFavoritesKey),    # 30
+      KeySymbol(kYankKey),              # 31
+      KeySymbol(kRemoveKey),            # 32
+      KeySymbol(kPickKey),              # 33
+    ]
+    var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
+
+    # Pad with spaces, so all symbol strings have the same width
+    map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
+
+    return [
+      TextLine.new('Keyboard Controls')->WithTitle(),
+      BlankLine(),
+      TextLine.new('Popup')->Labeled(),
+      TextLine.new($'{s[00]} Move up           {s[07]} RGB Pane'),
+      TextLine.new($'{s[01]} Move down         {s[08]} HSB Pane'),
+      TextLine.new($'{s[02]} Go to top         {s[09]} Grayscale'),
+      TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
+      TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
+      TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
+      TextLine.new($'{s[06]} Toggle tracking   '),
+      BlankLine(),
+      TextLine.new('Attributes')->Labeled(),
+      TextLine.new($'{s[13]} Toggle boldface   {s[18]} Toggle underline'),
+      TextLine.new($'{s[14]} Toggle italics    {s[19]} Toggle undercurl'),
+      TextLine.new($'{s[15]} Toggle reverse    {s[20]} Toggle underdashed'),
+      TextLine.new($'{s[16]} Toggle standout   {s[21]} Toggle underdotted'),
+      TextLine.new($'{s[17]} Toggle strikethru {s[22]} Toggle underdouble'),
+      BlankLine(),
+      TextLine.new('Color')->Labeled(),
+      TextLine.new($'{s[23]} Increment value   {s[27]} Set value'),
+      TextLine.new($'{s[24]} Decrement value   {s[28]} Set hi group'),
+      TextLine.new($'{s[25]} Yank color        {s[29]} Clear color'),
+      TextLine.new($'{s[26]} Paste color       {s[30]} Add to favorites'),
+      BlankLine(),
+      TextLine.new('Recent & Favorites')->Labeled(),
+      TextLine.new($'{s[31]} Yank color        {s[33]} Pick color'),
+      TextLine.new($'{s[32]} Delete color'),
+    ]
   enddef
 endclass
 # }}}
@@ -1034,7 +1179,15 @@ class FrameBuffer
   enddef
 
   def DeleteLines(first: number, last: number = first)
-    deletebufline(this.bufnr, first, last)
+    if last == 0
+      deletebufline(this.bufnr, first, '$')
+    else
+      deletebufline(this.bufnr, first, last)
+    endif
+  enddef
+
+  def Clear()
+    this.DeleteLines(1, 0)
   enddef
 endclass
 
@@ -1045,6 +1198,10 @@ class Pane
 
   def Bufnr(): number
     return this._framebuffer.bufnr
+  enddef
+
+  def Clear()
+    this._framebuffer.Clear()
   enddef
 
   def Render(view: IView, viewNumber: number)
@@ -1061,7 +1218,7 @@ class Pane
       if new_height > old_height
         this._framebuffer.Shift(lnum, new_height - old_height)
       else
-        this._framebuffer.DeleteLines(lnum, 1 + lnum + new_height - old_height)
+        this._framebuffer.DeleteLines(lnum + new_height, lnum + old_height - 1)
       endif
 
       this._heights[viewNumber] = new_height
@@ -1276,6 +1433,13 @@ class ColorPaletteGroup implements IView
   enddef
 endclass
 
+def MakeHelpPane(framebuffer: FrameBuffer): Pane
+  var pane = Pane.new(kHelpPane, framebuffer)
+  pane.Add(HelpView.new())
+
+  return pane
+enddef
+
 class MainPane
   var colorRef:            react.Property
   var recentColorsRef:     react.Property
@@ -1317,6 +1481,7 @@ class MainPane
     this.pane.Add(this.rgbSliderGroup.redSlider)
     this.pane.Add(this.rgbSliderGroup.greenSlider)
     this.pane.Add(this.rgbSliderGroup.blueSlider)
+    this.pane.Add(blankView)
     this.pane.Add(this.hsbSliderGroup.hueSlider)
     this.pane.Add(this.hsbSliderGroup.saturationSlider)
     this.pane.Add(this.hsbSliderGroup.brightnessSlider)
@@ -1334,16 +1499,18 @@ class MainPane
   enddef
 endclass
 # }}}
-# Effects {{{
-def InitEffects(bufnr: number)
-  # Sync the text property for the current highlight group
-  react.CreateEffect(() => {
-    prop_type_change(kPropTypeCurrentHighlight, {bufnr: bufnr, highlight: HiGroup()})
-  })
-enddef
-# }}}
 # Actions {{{
 def ActionNoop()
+enddef
+
+def ActionCancel()
+  popup_close(sWinID)
+  sWinID = -1
+
+  # TODO: revert only the changes of the stylepicker
+  if exists('g:colors_name') && !empty('g:colors_name')
+    execute 'colorscheme' g:colors_name
+  endif
 enddef
 
 def ActionIntercept()
@@ -1366,104 +1533,41 @@ enddef
 # }}}
 # Default Key Map {{{
 const kDefaultKeyMap = {
-  "\<LeftMouse>": ActionLeftClick,
-  "A":            ActionNoop,
-  ">":            ActionNoop,
-  "X":            ActionNoop,
-  "Z":            ActionNoop,
-  "x":            ActionNoop,
-  "\<left>":      ActionIntercept,
-  "\<down>":      ActionNoop,
-  "\<s-tab>":     ActionNoop,
-  "\<tab>":       ActionNoop,
-  "G":            ActionNoop,
-  "?":            ActionNoop,
-  "H":            ActionNoop,
-  "\<right>":     ActionNoop,
-  "P":            ActionNoop,
-  "\<enter>":     ActionNoop,
-  "D":            ActionNoop,
-  "R":            ActionNoop,
-  "E":            ActionNoop,
-  "N":            ActionNoop,
-  "B":            ActionNoop,
-  "I":            ActionNoop,
-  "V":            ActionNoop,
-  "S":            ActionNoop,
-  "K":            ActionNoop,
-  "T":            ActionNoop,
-  "~":            ActionNoop,
-  "-":            ActionNoop,
-  ".":            ActionNoop,
-  "=":            ActionNoop,
-  "U":            ActionNoop,
-  "<":            ActionNoop,
-  "\<up>":        ActionNoop,
-  "Y":            ActionNoop,
+  [kAddToFavoritesKey]:    ActionNoop,
+  [kBotKey]:               ActionNoop,
+  [kCancelKey]:            ActionCancel,
+  [kClearKey]:             ActionNoop,
+  [kCloseKey]:             ActionNoop,
+  [kDecrementKey]:         ActionIntercept,
+  [kDownKey]:              ActionNoop,
+  [kFgBgSpKey]:            ActionNoop,
+  [kSpBgFgKey]:            ActionNoop,
+  [kGrayPaneKey]:          ActionNoop,
+  [kHelpKey]:              () => pPaneID.Set(kHelpPane),
+  [kHsbPaneKey]:           ActionNoop,
+  [kIncrementKey]:         ActionNoop,
+  [kLeftClickKey]:         ActionLeftClick,
+  [kPasteKey]:             ActionNoop,
+  [kPickKey]:              ActionNoop,
+  [kRemoveKey]:            ActionNoop,
+  [kRgbPaneKey]:           () => pPaneID.Set(kMainPane),
+  [kSetColorKey]:          ActionNoop,
+  [kSetHiGroupKey]:        ActionNoop,
+  [kToggleBoldKey]:        ActionNoop,
+  [kToggleItalicKey]:      ActionNoop,
+  [kToggleReverseKey]:     ActionNoop,
+  [kToggleStandoutKey]:    ActionNoop,
+  [kToggleStrikeThruKey]:  ActionNoop,
+  [kToggleTrackingKey]:    ActionNoop,
+  [kToggleUndercurlKey]:   ActionNoop,
+  [kToggleUnderdottedKey]: ActionNoop,
+  [kToggleUnderdashedKey]: ActionNoop,
+  [kToggleUnderdoubleKey]: ActionNoop,
+  [kToggleUnderlineKey]:   ActionNoop,
+  [kTopKey]:               ActionNoop,
+  [kUpKey]:                ActionNoop,
+  [kYankKey]:              ActionNoop,
 }
-# }}}
-# Text with Properties {{{
-const kPropTypeNormal           = '_norm' # Normal text
-const kPropTypeOn               = '_on__' # Property for 'enabled' stuff
-const kPropTypeOff              = '_off_' # Property for 'disabled' stuff
-const kPropTypeSelectable       = '_slct' # Mark line as an item that can be selected
-const kPropTypeLabel            = '_labl' # Mark line as a label
-const kPropTypeSlider           = '_levl' # Mark line as a level bar (slider)
-const kPropTypeRecent           = '_mru_' # Mark line as a 'recent colors' line
-const kPropTypeFavorite         = '_fav_' # Mark line as a 'favorite colors' line
-const kPropTypeCurrentHighlight = '_curh' # To highlight text with the currently selected highglight group
-const kPropTypeWarning          = '_warn' # Highlight for warning symbols
-const kPropTypeHeader           = '_titl' # Highlight for title section
-const kPropTypeGuiHighlight     = '_gcol' # Highlight for the current GUI color
-const kPropTypeCtermHighlight   = '_tcol' # Highlight for the current cterm color
-const kPropTypeBold             = '_bold' # Highlight for bold attribute
-const kPropTypeItalic           = '_ital' # Highlight for italic attribute
-const kPropTypeUnderline        = '_ulin' # Highlight for underline attribute
-const kPropTypeUndercurl        = '_curl' # Highlight for undercurl attribute
-const kPropTypeStandout         = '_stnd' # Highlight for standout attribute
-const kPropTypeInverse          = '_invr' # Highlight for inverse attribute
-const kPropTypeStrikethrough    = '_strk' # Highlight for strikethrough attribute
-const kPropTypeGray             = '_gray' # Grayscale blocks
-const kPropTypeGray000          = '_g000' # Grayscale blocks
-const kPropTypeGray025          = '_g025' # Grayscale blocks
-const kPropTypeGray050          = '_g050' # Grayscale blocks
-const kPropTypeGray075          = '_g075' # Grayscale blocks
-const kPropTypeGray100          = '_g100' # Grayscale blocks
-
-def InitTextPropertyTypes(bufnr: number)
-  const propTypes = {
-    [kPropTypeNormal          ]: {bufnr: bufnr, highlight: 'Normal'                  },
-    [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'           },
-    [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'          },
-    [kPropTypeSelectable      ]: {bufnr: bufnr                                       },
-    [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label'                   },
-    [kPropTypeSlider          ]: {bufnr: bufnr                                       },
-    [kPropTypeRecent          ]: {bufnr: bufnr                                       },
-    [kPropTypeFavorite        ]: {bufnr: bufnr                                       },
-    [kPropTypeCurrentHighlight]: {bufnr: bufnr                                       },
-    [kPropTypeWarning         ]: {bufnr: bufnr, highlight: 'stylePickerWarning'      },
-    [kPropTypeHeader          ]: {bufnr: bufnr, highlight: 'Title'                   },
-    [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor'     },
-    [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'    },
-    [kPropTypeBold            ]: {bufnr: bufnr, highlight: 'stylePickerBold'         },
-    [kPropTypeItalic          ]: {bufnr: bufnr, highlight: 'stylePickerItalic'       },
-    [kPropTypeUnderline       ]: {bufnr: bufnr, highlight: 'stylePickerUnderline'    },
-    [kPropTypeUndercurl       ]: {bufnr: bufnr, highlight: 'stylePickerUndercurl'    },
-    [kPropTypeStandout        ]: {bufnr: bufnr, highlight: 'stylePickerStandout'     },
-    [kPropTypeInverse         ]: {bufnr: bufnr, highlight: 'stylePickerInverse'      },
-    [kPropTypeStrikethrough   ]: {bufnr: bufnr, highlight: 'stylePickerStrikethrough'},
-    [kPropTypeGray            ]: {bufnr: bufnr                                       },
-    [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'      },
-    [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'      },
-    [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'      },
-    [kPropTypeGray075         ]: {bufnr: bufnr, highlight: 'stylePickerGray075'      },
-    [kPropTypeGray100         ]: {bufnr: bufnr, highlight: 'stylePickerGray100'      },
-  }
-
-  for [propType, propValue] in items(propTypes)
-    prop_type_add(propType, propValue)
-  endfor
-enddef
 # }}}
 # Sliders {{{
 # NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
@@ -1538,6 +1642,7 @@ def HandleEvent(winid: number, rawKeyCode: string): bool
   sKeyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
   if kDefaultKeyMap->has_key(sKeyCode)
+    sEventHandled = true
     kDefaultKeyMap[sKeyCode]()
   endif
 
@@ -1585,10 +1690,17 @@ def StylePicker(
 
   InitHighlight()
   InitTextPropertyTypes(bufnr)
-  InitReactiveState(hiGroup)
-  InitEffects(bufnr)
+  SetHiGroup(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
+  SetEdited(false)
+  SetPaneID(kMainPane)
+  SetSelectedID(kRedSlider)
+
+  if !empty(Config.FavoritePath())
+    SetFavorite(LoadPalette(Config.FavoritePath()))
+  endif
 
   var framebuffer = FrameBuffer.new(bufnr)
+  var helpPane = MakeHelpPane(framebuffer)
 
   MainPane.new(framebuffer, pColor, pFavorite)
 
@@ -1596,6 +1708,9 @@ def StylePicker(
     TrackCursorAutoCmd()
   endif
 
+  var foo = pFavorite.Get()
+  foo->add('#a48291')
+  pFavorite.Set(foo, true)
   popup_show(winid)
 
   return winid
@@ -1604,7 +1719,7 @@ enddef
 # Public Interface {{{
 export def Open(hiGroup = '')
   if sWinID > 0
-    popup_close(sWinID)
+    popup_show(sWinID)
   endif
 
   Init()
