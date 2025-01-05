@@ -72,17 +72,14 @@ def Test_StylePicker_LeafView()
   var expected = [TextLine.new('hello'), TextLine.new('world')]
 
   assert_equal(expected, leafView.Body())
-  assert_equal(2, leafView.Height())
 
   leafView.SetVisible(false)
 
   assert_equal([], leafView.Body())
-  assert_equal(0, leafView.Height())
 
   leafView.SetVisible(true)
 
   assert_equal(expected, leafView.Body())
-  assert_equal(2, leafView.Height())
 enddef
 
 def Test_StylePickerRenderView()
@@ -109,19 +106,15 @@ def Test_StylePicker_ContainerView()
   var updatableView = TestUpdatableView.new(p1)
 
   assert_equal([], inner.Body())
-  assert_equal(0, inner.Height())
 
   inner.AddView(view)
 
   assert_equal(['x', 'y'], Text(view.Body()))
-  assert_equal(2, view.Height())
   assert_equal(['x', 'y'], Text(inner.Body()))
-  assert_equal(2, inner.Height())
 
   outer.AddView(inner)
 
   assert_equal(['x', 'y'], Text(outer.Body()))
-  assert_equal(2, outer.Height())
 
   var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
@@ -134,7 +127,6 @@ def Test_StylePicker_ContainerView()
     outer.AddView(updatableView)
 
     assert_equal(['x', 'y', 'text'], Text(outer.Body()))
-    assert_equal(3, outer.Height())
 
     updatableView.state.Set('new text')
 

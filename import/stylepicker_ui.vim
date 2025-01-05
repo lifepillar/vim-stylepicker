@@ -89,9 +89,12 @@ export interface IView
   var children: list<IView>
 
   def Body(): list<TextLine>
-  def Height(): number
   def SetVisible(state: bool)
 endinterface
+
+def Height(view: IView): number
+  return len(view.Body())
+enddef
 
 export interface IUpdatableView
   #   #
@@ -119,7 +122,7 @@ def LineNumber(view: IView): number
   var lnum = 1
 
   while i < len(items) && items[i] isnot view
-    lnum += items[i].Height()
+    lnum += Height(items[i])
     ++i
   endwhile
 
@@ -147,10 +150,6 @@ export class LeafView implements IView
     endif
 
     return this._content.Get()
-  enddef
-
-  def Height(): number
-    return len(this.Body())
   enddef
 
   def SetVisible(state: bool)
@@ -208,7 +207,7 @@ export class UpdatableView extends LeafView implements IUpdatableView
   enddef
 endclass
 
-export class LeafSelectableView extends UpdatableView implements ISelectableView
+export class SelectableView extends UpdatableView implements ISelectableView
   #   #
   #  # An updatable view that can be selected to modify its observed state.
   # #
@@ -236,16 +235,6 @@ export class ContainerView implements IView
     endfor
 
     return body
-  enddef
-
-  def Height(): number
-    var height = 0
-
-    for child in this.children
-      height += child.Height()
-    endfor
-
-    return height
   enddef
 
   def SetVisible(state: bool)
