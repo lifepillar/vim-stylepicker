@@ -1,0 +1,191 @@
+vim9script
+
+import 'libtinytest.vim'    as tt
+import 'libreactive.vim'    as react
+import 'stylepicker_ui.vim' as ui
+
+type TextProperty  = ui.TextProperty
+type TextLine      = ui.TextLine
+type LeafView      = ui.LeafView
+type UpdatableView = ui.UpdatableView
+type ContainerView = ui.ContainerView
+
+def Text(body: list<TextLine>): list<string>
+  return mapnew(body, (_, line: TextLine): string => line.text)
+enddef
+
+var sp0 = react.Property.new('')
+
+class TestLeafView extends LeafView
+  def new(content: list<string>)
+    var value = mapnew(content, (_, t): TextLine =>  TextLine.new(t))
+    this._content.Set(value)
+  enddef
+endclass
+
+class TestUpdatableView extends UpdatableView
+  var state: react.Property # string
+
+  def new(this.state)
+    super.Init()
+  enddef
+
+  def Update()
+    this._content.Set([TextLine.new(this.state.Get())])
+  enddef
+endclass
+
+def Test_StylePicker_TextLineFormat()
+  var l0 = TextLine.new('hello')
+
+  assert_equal('hello', l0.text)
+  assert_equal([],      l0.props)
+
+  var p0 = TextProperty.new('stylepicker_foo', 0, 5, 42)
+
+  l0.props->add(p0)
+
+  var textWithProperty = l0.Format()
+  var expected = {
+    text: 'hello',
+    props: [{col: 1, length: 5, type: 'stylepicker_foo', id: 42}]
+  }
+
+  assert_equal(expected, l0.Format())
+enddef
+
+def Test_StylePicker_UnicodeTextLine()
+  var text = "❯❯ XYZ"
+  var l0 = TextLine.new(text, [TextProperty.new('foo', 3, 4, 42)])
+  var textWithProperty = l0.Format()
+
+  var expected = {
+    text: text,
+    props: [{col: 8, length: 1, type: 'foo', id: 42}]
+  }
+
+  assert_equal(expected, l0.Format())
+enddef
+
+def Test_StylePicker_LeafView()
+  var leafView = TestLeafView.new(['hello', 'world'])
+  var expected = [TextLine.new('hello'), TextLine.new('world')]
+
+  assert_equal(expected, leafView.Body())
+  assert_equal(2, leafView.Height())
+
+  leafView.SetVisible(false)
+
+  assert_equal([], leafView.Body())
+  assert_equal(0, leafView.Height())
+
+  leafView.SetVisible(true)
+
+  assert_equal(expected, leafView.Body())
+  assert_equal(2, leafView.Height())
+enddef
+
+def Test_StylePickerRenderView()
+  var content = ['a', 'b', 'c']
+  var view = TestLeafView.new(content)
+
+  var bufnr = bufadd('StylePicker test buffer')
+  bufload(bufnr)
+
+  try
+    ui.StartRendering(view, bufnr)
+
+    assert_equal(content, getbufline(bufnr, 1, '$'))
+  finally
+    execute 'bwipe!' bufnr
+  endtry
+enddef
+
+def Test_StylePicker_ContainerView()
+  var outer = ContainerView.new()
+  var inner = ContainerView.new()
+  var view = TestLeafView.new(['x', 'y'])
+  var p1 = react.Property.new('text')
+  var updatableView = TestUpdatableView.new(p1)
+
+  assert_equal([], inner.Body())
+  assert_equal(0, inner.Height())
+
+  inner.AddView(view)
+
+  assert_equal(['x', 'y'], Text(view.Body()))
+  assert_equal(2, view.Height())
+  assert_equal(['x', 'y'], Text(inner.Body()))
+  assert_equal(2, inner.Height())
+
+  outer.AddView(inner)
+
+  assert_equal(['x', 'y'], Text(outer.Body()))
+  assert_equal(2, outer.Height())
+
+  var bufnr = bufadd('StylePicker test buffer')
+  bufload(bufnr)
+
+  try
+    ui.StartRendering(outer, bufnr)
+
+    assert_equal(['x', 'y'], getbufline(bufnr, 1, '$'))
+
+    outer.AddView(updatableView)
+
+    assert_equal(['x', 'y', 'text'], Text(outer.Body()))
+    assert_equal(3, outer.Height())
+
+    updatableView.state.Set('new text')
+
+    assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+
+    # Hiding views
+    view.SetVisible(false)
+    assert_equal(['new text'], Text(outer.Body()))
+
+    view.SetVisible(true)
+    assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+
+    inner.SetVisible(false)
+    assert_equal(['new text'], Text(outer.Body()))
+
+    outer.SetVisible(false)
+    assert_equal([], Text(outer.Body()))
+
+    inner.SetVisible(true)
+    assert_equal(['x', 'y'], Text(outer.Body()))
+
+    inner.SetVisible(false)
+    outer.SetVisible(true)
+    assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+  finally
+    execute 'bwipe!' bufnr
+  endtry
+enddef
+
+def Test_StylePickerUpdatableView()
+  var p1 = react.Property.new('initial text')
+  var updatableView = TestUpdatableView.new(p1)
+  var containerView = ContainerView.new()
+
+  containerView.AddView(updatableView)
+
+  var bufnr = bufadd('StylePicker test buffer')
+  bufload(bufnr)
+
+  try
+    ui.StartRendering(containerView, bufnr)
+
+    assert_equal(['initial text'], getbufline(bufnr, 1, '$'))
+
+    p1.Set('final text')
+
+    assert_equal(['final text'], getbufline(bufnr, 1, '$'))
+  finally
+    execute 'bwipe!' bufnr
+  endtry
+enddef
+
+tt.Run('StylePicker')
+
