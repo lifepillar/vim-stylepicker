@@ -80,41 +80,37 @@ def DrawLines(bufnr: number, lnum: number, lines: list<TextLine>)
   endfor
 enddef
 
-export interface IView
+export class View
   #   #
-  #  # Interface for hierarchical views.
+  #  # Base class for all views and containers.
   # #
   ##
-  var parent:   IView
-  var children: list<IView>
+  var  parent:    View         = null_object
+  var  children:  list<View>   = []
+  var _visible: react.Property = react.Property.new(true)
 
   def Body(): list<TextLine>
-  def SetVisible(state: bool)
-  def IsVisible(): bool
-  def RespondToEvent(lnum: number, keyCode: string): bool
-endinterface
+    return []
+  enddef
 
-def Height(view: IView): number
+  def SetVisible(state: bool)
+    this._visible.Set(state)
+  enddef
+
+  def IsVisible(): bool
+    return this._visible.Get()
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    return false
+  enddef
+endclass
+
+def Height(view: View): number
   return len(view.Body())
 enddef
 
-export interface IUpdatable
-  #   #
-  #  # Interface for (leaf) views whose content is not static.
-  # #
-  ##
-  def Update()
-endinterface
-
-export interface ISelectable extends IUpdatable
-  #   #
-  #  # Interface for (leaf) views that can be selected to be updated.
-  # #
-  ##
-  var selected: react.Property # bool
-endinterface
-
-def LineNumber(view: IView): number
+def LineNumber(view: View): number
   if view.parent == null
     return 1
   endif
@@ -131,15 +127,11 @@ def LineNumber(view: IView): number
   return lnum
 enddef
 
-export abstract class LeafView implements IView
+export class LeafView extends View
   #   #
   #  # A leaf view has actual content that can be drawn in a buffer.
   # #
   ##
-  var   parent:   IView = null_object
-  const children: list<IView> = []
-
-  var  _visible   = react.Property.new(true)
   var  _collapsed = react.Property.new(false)
   var  _content   = react.Property.new([])
   # The height of the view last time it was rendered: it may be different from
@@ -157,10 +149,6 @@ export abstract class LeafView implements IView
   def SetVisible(state: bool)
     this._collapsed.Set(!state)
     this._visible.Set(state)
-  enddef
-
-  def IsVisible(): bool
-    return this._visible.Get()
   enddef
 
   def Render(bufnr: number)
@@ -198,42 +186,13 @@ export abstract class LeafView implements IView
 
     DrawLines(bufnr, lnum, body)
   enddef
-
-  def RespondToEvent(lnum: number, keyCode: string): bool
-    return false
-  enddef
 endclass
 
-export class UpdatableView extends LeafView implements IUpdatable
-  #   # A leaf view which is automatically updated when its observed state
-  #  # changes. Subclasses should call super.Init() in new() and override
-  # # Update().
-  ##
-  def Init()
-    react.CreateEffect(this.Update)
-  enddef
-
-  def Update()
-  enddef
-endclass
-
-export class SelectableView extends UpdatableView implements ISelectable
-  #   #
-  #  # An updatable view that can be selected to modify its observed state.
-  # # Subclasses should call super.Init() in new() and override Update().
-  ##
-  var selected = react.Property.new(false)
-endclass
-
-export class ContainerView implements IView
+export class ContainerView extends View
   #   #
   #  # A container for views and other containers.
   # #
   ##
-  var  parent:   IView          = null_object
-  var  children: list<IView>    = []
-  var _visible:  react.Property = react.Property.new(true)
-
   def Body(): list<TextLine>
     var body: list<TextLine> = []
 
@@ -252,11 +211,7 @@ export class ContainerView implements IView
     this._visible.Set(state)
   enddef
 
-  def IsVisible(): bool
-    return this._visible.Get()
-  enddef
-
-  def AddView(view: IView)
+  def AddView(view: View)
     view.parent = this
     this.children->add(view)
   enddef
@@ -284,7 +239,44 @@ export class ContainerView implements IView
   enddef
 endclass
 
-export def StartRendering(view: IView, bufnr: number)
+export interface IUpdatable
+  #   #
+  #  # Interface for (leaf) views whose content is not static.
+  # #
+  ##
+  def Update()
+endinterface
+
+export interface ISelectable extends IUpdatable
+  #   #
+  #  # Interface for (leaf) views that can be selected to be updated.
+  # #
+  ##
+  var selected: react.Property # bool
+endinterface
+
+export class UpdatableView extends LeafView implements IUpdatable
+  #   # A leaf view which is automatically updated when its observed state
+  #  # changes. Subclasses should call super.Init() in new() and override
+  # # Update().
+  ##
+  def Init()
+    react.CreateEffect(this.Update)
+  enddef
+
+  def Update()
+  enddef
+endclass
+
+export class SelectableView extends UpdatableView implements ISelectable
+  #   #
+  #  # An updatable view that can be selected to modify its observed state.
+  # # Subclasses should call super.Init() in new() and override Update().
+  ##
+  var selected = react.Property.new(false)
+endclass
+
+export def StartRendering(view: View, bufnr: number)
   if empty(view.children)
     react.CreateEffect(() => (<LeafView>view).Render(bufnr))
     return

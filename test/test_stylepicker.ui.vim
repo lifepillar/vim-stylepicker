@@ -9,7 +9,7 @@ type TextLine      = ui.TextLine
 type LeafView      = ui.LeafView
 type UpdatableView = ui.UpdatableView
 type ContainerView = ui.ContainerView
-type IView         = ui.IView
+type View          = ui.View
 
 def Text(body: list<TextLine>): list<string>
   return mapnew(body, (_, line: TextLine): string => line.text)
@@ -17,8 +17,7 @@ enddef
 
 var sp0 = react.Property.new('')
 
-# See https://github.com/vim/vim/issues/15484 for `implements IView`
-class TestLeafView extends LeafView implements IView
+class TestLeafView extends LeafView
   var eventTarget = ''
 
   def new(content: list<string>)
