@@ -460,9 +460,7 @@ class ColorProperty extends react.Property
   enddef
 
   def Set(newValue: string, force = false)
-    echomsg $'Asked to set {newValue}'
     if !force && newValue == this.value
-      echomsg '  Color not changed. Skipping update'
       return
     endif
 
@@ -1166,21 +1164,27 @@ class ColorPalette extends ContainerView
       this.numColorsPerLine = v:none
       )
     this.AddView(SectionTitleView.new(title))
-    this.AddColorSlices_()
+
+    react.CreateEffect(() => {
+      this.AddColorSlices_()
+    })
   enddef
 
   def AddColorSlices_() # Dynamically add slices to accommodate all the colors
     var palette   = this.paletteRef.Get()
     var numColors = len(palette)
-    var numSlots  = len(this.children) * this.numColorsPerLine
+    var numSlots  = (len(this.children) - 1) * this.numColorsPerLine
 
     while numSlots < numColors
-      this.children->add(ColorSliceView.new(
+      var new_slice = ColorSliceView.new(
         this.paletteRef,
         numSlots,
         numSlots + this.numColorsPerLine,
         this.bufnr
-      ))
+      )
+
+      this.AddView(new_slice)
+      ui.StartRendering(new_slice, this.bufnr)
       numSlots += this.numColorsPerLine
     endwhile
   enddef
@@ -1188,7 +1192,12 @@ endclass
 # }}}
 # MainPane {{{
 class MainPane extends ContainerView
-  def new(bufnr: number, colorRef: ColorProperty)
+  def new(
+      bufnr: number,
+      colorRef: ColorProperty,
+      pRecentRef: react.Property,
+      pFavoriteRef: react.Property
+      )
     this.AddView(HeaderView.new())
     this.AddView(BlankView.new())
     this.AddView(RgbSliderGroup.new(colorRef))
@@ -1200,6 +1209,8 @@ class MainPane extends ContainerView
     this.AddView(BlankView.new())
     this.AddView(QuotationView.new())
     this.AddView(BlankView.new())
+    this.AddView(ColorPalette.new(pRecentRef, 'Recent Colors', bufnr))
+    this.AddView(ColorPalette.new(pFavoriteRef, 'Favorite Colors', bufnr))
   enddef
 endclass
 # }}}
@@ -1408,15 +1419,24 @@ def StylePicker(
     SetFavorite(LoadPalette(Config.FavoritePath()))
   endif
 
-  var mainPane = MainPane.new(bufnr, pColor)
+  var mainPane = MainPane.new(bufnr, pColor, pRecent, pFavorite)
+  var helpPane = ContainerView.new()
+
+  helpPane.AddView(HelpView.new(false))
 
   ui.StartRendering(mainPane, bufnr)
+  ui.StartRendering(helpPane, bufnr)
 
   if empty(hiGroup)
     TrackCursorAutoCmd()
   endif
 
   popup_show(winid)
+
+  mainPane.SetVisible(false)
+  helpPane.SetVisible(true)
+  helpPane.SetVisible(false)
+  mainPane.SetVisible(true)
 
   return winid
 enddef
