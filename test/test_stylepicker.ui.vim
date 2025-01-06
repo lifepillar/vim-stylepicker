@@ -17,7 +17,7 @@ enddef
 
 var sp0 = react.Property.new('')
 
-# See https://github.com/vim/vim/issues/15484 for `implements IView` 
+# See https://github.com/vim/vim/issues/15484 for `implements IView`
 class TestLeafView extends LeafView implements IView
   var eventTarget = ''
 
