@@ -9,6 +9,7 @@ type TextLine      = ui.TextLine
 type LeafView      = ui.LeafView
 type UpdatableView = ui.UpdatableView
 type ContainerView = ui.ContainerView
+type IView         = ui.IView
 
 def Text(body: list<TextLine>): list<string>
   return mapnew(body, (_, line: TextLine): string => line.text)
@@ -16,10 +17,23 @@ enddef
 
 var sp0 = react.Property.new('')
 
-class TestLeafView extends LeafView
+# See https://github.com/vim/vim/issues/15484 for `implements IView` 
+class TestLeafView extends LeafView implements IView
+  var eventTarget = ''
+
   def new(content: list<string>)
     var value = mapnew(content, (_, t): TextLine =>  TextLine.new(t))
     this._content.Set(value)
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    var handled = (keyCode == 'K')
+
+    if handled
+      this.eventTarget = this._content.Get()[lnum - 1].text
+    endif
+
+    return handled
   enddef
 endclass
 
@@ -187,11 +201,11 @@ def Test_StylePickerUpdatableView()
 enddef
 
 def Test_StylePickerViewFollowedByContainer()
-  var header = TestLeafView.new(['Header'])
-  var r = TestLeafView.new(['r'])
-  var g = TestLeafView.new(['g'])
-  var b = TestLeafView.new(['b'])
-  var rgb = ContainerView.new()
+  var header        = TestLeafView.new(['Header'])
+  var r             = TestLeafView.new(['r'])
+  var g             = TestLeafView.new(['g'])
+  var b             = TestLeafView.new(['b'])
+  var rgb           = ContainerView.new()
   var containerView = ContainerView.new()
 
   rgb.AddView(r)
@@ -211,6 +225,41 @@ def Test_StylePickerViewFollowedByContainer()
     execute 'bwipe!' bufnr
   endtry
 
+enddef
+
+def Test_StylePickerRespondToEvent()
+  var v1             = TestLeafView.new(['a', 'b', 'c'])
+  var v2             = TestLeafView.new(['d', 'e'])
+  var v3             = TestLeafView.new(['f', 'g'])
+  var innerContainer = ContainerView.new()
+  var containerView  = ContainerView.new()
+
+  innerContainer.AddView(v1)
+  innerContainer.AddView(v2)
+  containerView.AddView(innerContainer)
+  containerView.AddView(v3)
+
+  var handled = containerView.RespondToEvent(2, 'N')
+
+  assert_false(handled)
+  assert_equal('', v1.eventTarget)
+
+  handled = containerView.RespondToEvent(2, 'K')
+
+  assert_true(handled)
+  assert_equal('b', v1.eventTarget)
+  assert_equal('',  v2.eventTarget)
+
+  handled = containerView.RespondToEvent(5, 'K')
+
+  assert_true(handled)
+  assert_equal('e', v2.eventTarget)
+  assert_equal('b',  v1.eventTarget)
+
+  handled = containerView.RespondToEvent(6, 'K')
+
+  assert_true(handled)
+  assert_equal('f', v3.eventTarget)
 enddef
 
 tt.Run('StylePicker')

@@ -91,13 +91,14 @@ export interface IView
   def Body(): list<TextLine>
   def SetVisible(state: bool)
   def IsVisible(): bool
+  def RespondToEvent(lnum: number, keyCode: string): bool
 endinterface
 
 def Height(view: IView): number
   return len(view.Body())
 enddef
 
-export interface IUpdatableView
+export interface IUpdatable
   #   #
   #  # Interface for (leaf) views whose content is not static.
   # #
@@ -105,7 +106,7 @@ export interface IUpdatableView
   def Update()
 endinterface
 
-export interface ISelectableView extends IUpdatableView
+export interface ISelectable extends IUpdatable
   #   #
   #  # Interface for (leaf) views that can be selected to be updated.
   # #
@@ -197,9 +198,13 @@ export abstract class LeafView implements IView
 
     DrawLines(bufnr, lnum, body)
   enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    return false
+  enddef
 endclass
 
-export class UpdatableView extends LeafView implements IUpdatableView
+export class UpdatableView extends LeafView implements IUpdatable
   #   # A leaf view which is automatically updated when its observed state
   #  # changes. Subclasses should call super.Init() in new() and override
   # # Update().
@@ -212,7 +217,7 @@ export class UpdatableView extends LeafView implements IUpdatableView
   enddef
 endclass
 
-export class SelectableView extends UpdatableView implements ISelectableView
+export class SelectableView extends UpdatableView implements ISelectable
   #   #
   #  # An updatable view that can be selected to modify its observed state.
   # # Subclasses should call super.Init() in new() and override Update().
@@ -254,6 +259,28 @@ export class ContainerView implements IView
   def AddView(view: IView)
     view.parent = this
     this.children->add(view)
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    var lnum_ = lnum
+    var i          = 0
+    var handled    = false
+
+    # Find the child containing lnum
+    while i < len(this.children)
+      var view = this.children[i]
+      var height = len(view.Body())
+
+      if lnum_ <= height # Forward the event to the child
+        handled = view.RespondToEvent(lnum_, keyCode)
+        break
+      endif
+
+      lnum_ -= height
+      ++i
+    endwhile
+
+    return handled
   enddef
 endclass
 
