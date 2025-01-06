@@ -63,12 +63,12 @@ def DrawLines(bufnr: number, lnum: number, lines: list<TextLine>)
   ##
 
   # Make sure the buffer has enough lines
-#   var max_lnum = lnum + len(lines) - 1
-#   var linecount  = getbufinfo(bufnr)[0].linecount
-#
-#   if max_lnum > linecount
-#     appendbufline(bufnr, '$', repeat([''], max_lnum - linecount))
-#   endif
+  var max_lnum = lnum + len(lines) - 1
+  var linecount  = getbufinfo(bufnr)[0].linecount
+
+  if max_lnum > linecount
+    appendbufline(bufnr, '$', repeat([''], max_lnum - linecount))
+  endif
 
   # Draw the lines
   var i = lnum
@@ -90,6 +90,7 @@ export interface IView
 
   def Body(): list<TextLine>
   def SetVisible(state: bool)
+  def IsVisible(): bool
 endinterface
 
 def Height(view: IView): number
@@ -109,7 +110,7 @@ export interface ISelectableView extends IUpdatableView
   #  # Interface for (leaf) views that can be selected to be updated.
   # #
   ##
-  def SetSelected(state: bool)
+  var selected: react.Property # bool
 endinterface
 
 def LineNumber(view: IView): number
@@ -119,7 +120,7 @@ def LineNumber(view: IView): number
 
   var i = 0
   var items = view.parent.children
-  var lnum = 1
+  var lnum = LineNumber(view.parent)
 
   while i < len(items) && items[i] isnot view
     lnum += Height(items[i])
@@ -129,7 +130,7 @@ def LineNumber(view: IView): number
   return lnum
 enddef
 
-export class LeafView implements IView
+export abstract class LeafView implements IView
   #   #
   #  # A leaf view has actual content that can be drawn in a buffer.
   # #
@@ -157,10 +158,14 @@ export class LeafView implements IView
     this._visible.Set(state)
   enddef
 
+  def IsVisible(): bool
+    return this._visible.Get()
+  enddef
+
   def Render(bufnr: number)
     #   # Render a view in a buffer. This method may be called inside
     #  # an effect to automatically re-render a view.
-    # # Accesses two properties: _visible and (indirectly) _collapsed.
+    # # Accesses two properties: visible and (indirectly) _collapsed.
     ##
     if !this._visible.Get()
       return
@@ -195,9 +200,9 @@ export class LeafView implements IView
 endclass
 
 export class UpdatableView extends LeafView implements IUpdatableView
-  #   #
-  #  # A leaf view which is automatically updated when its observed state
-  # # changes.
+  #   # A leaf view which is automatically updated when its observed state
+  #  # changes. Subclasses should call super.Init() in new() and override
+  # # Update().
   ##
   def Init()
     react.CreateEffect(this.Update)
@@ -210,13 +215,9 @@ endclass
 export class SelectableView extends UpdatableView implements ISelectableView
   #   #
   #  # An updatable view that can be selected to modify its observed state.
-  # #
+  # # Subclasses should call super.Init() in new() and override Update().
   ##
-  var _selected = react.Property.new(false)
-
-  def SetSelected(state: bool)
-    this._selected.Set(state)
-  enddef
+  var selected = react.Property.new(false)
 endclass
 
 export class ContainerView implements IView
@@ -224,8 +225,9 @@ export class ContainerView implements IView
   #  # A container for views and other containers.
   # #
   ##
-  var parent:   IView       = null_object
-  var children: list<IView> = []
+  var  parent:   IView          = null_object
+  var  children: list<IView>    = []
+  var _visible:  react.Property = react.Property.new(true)
 
   def Body(): list<TextLine>
     var body: list<TextLine> = []
@@ -241,6 +243,12 @@ export class ContainerView implements IView
     for child in this.children
       child.SetVisible(state)
     endfor
+
+    this._visible.Set(state)
+  enddef
+
+  def IsVisible(): bool
+    return this._visible.Get()
   enddef
 
   def AddView(view: IView)

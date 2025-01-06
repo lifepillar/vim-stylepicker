@@ -122,6 +122,13 @@ def Test_StylePicker_ContainerView()
   try
     ui.StartRendering(outer, bufnr)
 
+    # :-- outer ------------------:
+    # | :-- inner --------------: |
+    # | |         view          | |
+    # | :-----------------------: |
+    # |       updatableView       |
+    # :---------------------------:
+
     assert_equal(['x', 'y'], getbufline(bufnr, 1, '$'))
 
     outer.AddView(updatableView)
@@ -177,6 +184,33 @@ def Test_StylePickerUpdatableView()
   finally
     execute 'bwipe!' bufnr
   endtry
+enddef
+
+def Test_StylePickerViewFollowedByContainer()
+  var header = TestLeafView.new(['Header'])
+  var r = TestLeafView.new(['r'])
+  var g = TestLeafView.new(['g'])
+  var b = TestLeafView.new(['b'])
+  var rgb = ContainerView.new()
+  var containerView = ContainerView.new()
+
+  rgb.AddView(r)
+  rgb.AddView(g)
+  rgb.AddView(b)
+  containerView.AddView(header)
+  containerView.AddView(rgb)
+
+  var bufnr = bufadd('StylePicker test buffer')
+  bufload(bufnr)
+
+  try
+    ui.StartRendering(containerView, bufnr)
+
+    assert_equal(['Header', 'r', 'g', 'b'], getbufline(bufnr, 1, '$'))
+  finally
+    execute 'bwipe!' bufnr
+  endtry
+
 enddef
 
 tt.Run('StylePicker')
