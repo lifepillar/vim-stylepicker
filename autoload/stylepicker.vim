@@ -7,12 +7,17 @@ if !has('popupwin') || !has('textprop') || v:version < 901
 endif
 # }}}
 # Imports {{{
-import 'libcolor.vim'    as libcolor
-import 'libreactive.vim' as react
+import 'libcolor.vim'       as libcolor
+import 'libreactive.vim'    as react
+import 'stylepicker_ui.vim' as ui
 # }}}
 # Types and Constants {{{
-type ActionCode   = string
-type HexColor     = string
+type TextProperty   = ui.TextProperty
+type TextLine       = ui.TextLine
+type LeafView       = ui.LeafView
+type UpdatableView  = ui.UpdatableView
+type SelectableView = ui.SelectableView
+type ContainerView  = ui.ContainerView
 
 const kMainPane                = 0
 const kRGBPane                 = 1
@@ -426,32 +431,6 @@ def ChooseTermColor(): string
   return ''
 enddef
 # }}}
-# Autocommands {{{
-def ColorschemeChangedAutoCmd()
-  augroup StylePicker
-    autocmd ColorScheme * InitHighlight(sColorMode, sStyleMode)
-  augroup END
-enddef
-
-def TrackCursorAutoCmd()
-  augroup StylePicker
-    autocmd CursorMoved * SetHiGroup(HiGroupUnderCursor())
-  augroup END
-enddef
-
-def UntrackCursorAutoCmd()
-  if exists('#StylePicker')
-    autocmd! StylePicker CursorMoved *
-  endif
-enddef
-
-def DisableAllAutocommands()
-  if exists('#StylePicker')
-    autocmd! StylePicker
-    augroup! StylePicker
-  endif
-enddef
-# }}}
 # Global Reactive State {{{
 def GetSet(value: any, pool = sPool): list<any>
   var p_ = react.Property.new(value, pool)
@@ -481,7 +460,9 @@ class ColorProperty extends react.Property
   enddef
 
   def Set(newValue: string, force = false)
+    echomsg $'Asked to set {newValue}'
     if !force && newValue == this.value
+      echomsg '  Color not changed. Skipping update'
       return
     endif
 
@@ -498,6 +479,7 @@ class ColorProperty extends react.Property
 
     hlset([attrs])
     super.Set(newValue, force)
+    echomsg $'  Color set to {newValue}'
   enddef
 endclass
 
@@ -551,6 +533,32 @@ var pColor = ColorProperty.new('#000000', sPool) # Value of the current color
 var pStyle = StyleProperty.new({}, sPool) # Dictionary of style attributes
 var [Color, SetColor] = [pColor.Get, pColor.Set]
 var [Style, SetStyle] = [pStyle.Get, pStyle.Set]
+# }}}
+# Autocommands {{{
+def ColorschemeChangedAutoCmd()
+  augroup StylePicker
+    autocmd ColorScheme * InitHighlight(sColorMode, sStyleMode)
+  augroup END
+enddef
+
+def TrackCursorAutoCmd()
+  augroup StylePicker
+    autocmd CursorMoved * SetHiGroup(HiGroupUnderCursor())
+  augroup END
+enddef
+
+def UntrackCursorAutoCmd()
+  if exists('#StylePicker')
+    autocmd! StylePicker CursorMoved *
+      endif
+enddef
+
+def DisableAllAutocommands()
+  if exists('#StylePicker')
+    autocmd! StylePicker
+    augroup! StylePicker
+  endif
+enddef
 # }}}
 # Highlight Groups {{{
 def InitHighlight()
@@ -656,36 +664,6 @@ def InitTextPropertyTypes(bufnr: number)
   })
 enddef
 
-class TextProperty
-  var type: string     # Text property type (created with prop_type_add())
-  var xl:   number     # 0-based start position of the property, in characters (composed chars not counted separately)
-  var xr:   number     # One past the end position of the property
-  var id:   number = 1 # Optional property ID
-
-  def new(this.type, this.xl, this.xr, this.id = v:none)
-    if this.xr < this.xl
-      throw $'Invalid text property range: [{this.xl},{this.xr}] (type = {this.type})'
-    endif
-  enddef
-endclass
-
-class TextLine
-  var text: string
-  var props: list<TextProperty> = []
-
-  def Format(): dict<any>
-    var props: list<dict<any>> = []
-
-    for prop in this.props
-      var xl = byteidx(this.text, prop.xl)
-      var xr = byteidx(this.text, prop.xr)
-      props->add({col: 1 + xl, length: xr - xl, type: prop.type, id: prop.id})
-    endfor
-
-    return {text: this.text, props: props}
-  enddef
-endclass
-
 def BlankLine(width = 0): TextLine
   return TextLine.new(repeat(' ', width))
 enddef
@@ -723,62 +701,15 @@ def Labeled(line: TextLine, from = 0, to = strcharlen(line.text)): TextLine
   return WithStyle(line, kPropTypeLabel, from, to)
 enddef
 # }}}
-# Views {{{
-interface IView
-  def Body(): list<TextLine>
-endinterface
-
-interface IUpdatableView
-  def Update()
-endinterface
-
-interface ISelectableView
-  def Selected(state: bool)
-endinterface
-
-class BaseView implements IView
-  var hidden   = react.Property.new(false)
-  var _content = react.Property.new([])
-
-  def Hidden(state: bool)
-    this.hidden.Set(state)
-  enddef
-
-  def Body(): list<TextLine>
-    if this.hidden.Get()
-      return []
-    endif
-
-    return this._content.Get()
-  enddef
-endclass
-
-class BaseUpdatableView extends BaseView implements IUpdatableView
-  def Init()
-    react.CreateEffect(this.Update)
-  enddef
-
-  def Update()
-  enddef
-endclass
-
-class BaseSelectableView extends BaseUpdatableView implements ISelectableView
-  var selected = react.Property.new(false)
-
-  def Selected(state: bool)
-    this.selected.Set(state)
-  enddef
-endclass
-
 # BlankView {{{
-class BlankView extends BaseView
+class BlankView extends LeafView
   def new(height = 1)
     this._content.Set(repeat([BlankLine()], height))
   enddef
 endclass
 # }}}
 # HeaderView {{{
-class HeaderView extends BaseUpdatableView
+class HeaderView extends UpdatableView
   def new()
     super.Init()
   enddef
@@ -802,16 +733,15 @@ class HeaderView extends BaseUpdatableView
       ->WithState(aStyle.reverse,       offset + 3, offset + 4)
       ->WithState(aStyle.standout,      offset + 4, offset + 5)
       ->WithState(aStyle.strikethrough, offset + 5, offset + 6),
-      BlankLine(),
     ])
   enddef
 endclass
 # }}}
 # SectionTitleView {{{
-class SectionTitleView extends BaseView
+class SectionTitleView extends LeafView
   #   #
-  #  #
-  # # A static line with a Label highlight.
+  #  # A static line with a Label highlight.
+  # #
   ##
   def new(title: string)
     this._content.Set([TextLine.new(title)->Labeled()])
@@ -819,7 +749,7 @@ class SectionTitleView extends BaseView
 endclass
 # }}}
 # GrayscaleSectionView {{{
-class GrayscaleSectionView extends BaseView
+class GrayscaleSectionView extends LeafView
   #   #
   #  #
   # # A static line with grayscale markers.
@@ -841,7 +771,7 @@ endclass
 # }}}
 # SliderView {{{
 # NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
-class SliderView extends BaseSelectableView
+class SliderView extends SelectableView
   var name:     string               # The name of the slider (appears next to the slider)
   var value:    react.Property       # The value displayed by the slider
   var max:      number         = 255 # Maximum value of the slider
@@ -895,7 +825,7 @@ class SliderView extends BaseSelectableView
 endclass
 # }}}
 # StepView {{{
-class StepView extends BaseUpdatableView
+class StepView extends UpdatableView
   var value: react.Property
 
   def new()
@@ -906,13 +836,12 @@ class StepView extends BaseUpdatableView
   def Update()
     this._content.Set([
       TextLine.new(printf('Step  %02d', this.value.Get()))->Labeled(0, 4),
-      BlankLine(),
     ])
   enddef
 endclass
 # }}}
 # ColorInfoView {{{
-class ColorInfoView extends BaseUpdatableView
+class ColorInfoView extends UpdatableView
   def new()
     super.Init()
   enddef
@@ -947,23 +876,21 @@ class ColorInfoView extends BaseUpdatableView
 
     this._content.Set([
       TextLine.new(info)->WithGuiHighlight(0, 3)->WithCtermHighlight(4, 7),
-      BlankLine(),
     ])
   enddef
 endclass
 # }}}
 # QuotationView {{{
-class QuotationView extends BaseView
-  def Update()
+class QuotationView extends LeafView
+  def new()
     this._content.Set([
       TextLine.new(Center(Config.RandomQuotation(), Config.PopupWidth()))->WithCurrentHighlight(),
-      BlankLine(),
     ])
   enddef
 endclass
 # }}}
 # ColorSliceView {{{
-class ColorSliceView extends BaseSelectableView
+class ColorSliceView extends SelectableView
   #   #
   #  # A view of a segment of a color palette as a strip of colored cells:
   # #
@@ -1042,7 +969,7 @@ class ColorSliceView extends BaseSelectableView
 endclass
 # }}}
 # FooterView {{{
-class FooterView extends BaseUpdatableView
+class FooterView extends UpdatableView
   def new()
     super.Init()
   enddef
@@ -1055,8 +982,8 @@ class FooterView extends BaseUpdatableView
 endclass
 # }}}
 # Help View {{{
-class HelpView implements IView
-  def Body(): list<TextLine>
+class HelpView extends LeafView
+  def new(visible = false)
     var s = [
       KeySymbol(kUpKey),                # 00
       KeySymbol(kDownKey),              # 01
@@ -1098,7 +1025,7 @@ class HelpView implements IView
     # Pad with spaces, so all symbol strings have the same width
     map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
 
-    return [
+    this._content.Set([
       TextLine.new('Keyboard Controls')->WithTitle(),
       BlankLine(),
       TextLine.new('Popup')->Labeled(),
@@ -1126,233 +1053,93 @@ class HelpView implements IView
       TextLine.new('Recent & Favorites')->Labeled(),
       TextLine.new($'{s[31]} Yank color        {s[33]} Pick color'),
       TextLine.new($'{s[32]} Delete color'),
-    ]
+    ])
+    this.SetVisible(visible)
   enddef
 endclass
 # }}}
-# }}}
+# RgbSliderGroup {{{
+class RgbSliderGroup extends ContainerView
+  var colorRef: ColorProperty
 
-# Rendering {{{
-class FrameBuffer
-  var bufnr: number
-
-  def Expand(lnum: number)
-    var bufinfo = getbufinfo(this.bufnr)[0]
-
-    if lnum <= bufinfo.linecount
-      return
-    endif
-
-    var lines = repeat([''], lnum - bufinfo.linecount)
-
-    appendbufline(this.bufnr, '$', lines)
-  enddef
-
-  def AddTextProperties(lnum: number, line: TextLine)
-    for prop in line.props
-      var xl = byteidx(line.text, prop.xl)
-      var xr = byteidx(line.text, prop.xr)
-
-      prop_add(lnum, 1 + xl, {
-        type:   prop.type,
-        length: xr - xl,
-        bufnr:  this.bufnr,
-        id:     prop.id,
-      })
-    endfor
-  enddef
-
-  def DrawLines(lnum: number, lines: list<TextLine>)
-    this.Expand(lnum + len(lines) - 1)
-
-    var i = lnum
-
-    for line in lines
-      setbufline(this.bufnr, i, line.text)
-      this.AddTextProperties(i, line)
-      ++i
-    endfor
-  enddef
-
-  def Shift(lnum: number, amount: number)
-    appendbufline(this.bufnr, lnum, repeat([''], amount))
-  enddef
-
-  def DeleteLines(first: number, last: number = first)
-    if last == 0
-      deletebufline(this.bufnr, first, '$')
-    else
-      deletebufline(this.bufnr, first, last)
-    endif
-  enddef
-
-  def Clear()
-    this.DeleteLines(1, 0)
-  enddef
-endclass
-
-class Pane
-  var id:           number
-  var _framebuffer: FrameBuffer
-  var _heights:     list<number> = [0] # Current height of each member view (first view has index 1)
-
-  def Bufnr(): number
-    return this._framebuffer.bufnr
-  enddef
-
-  def Clear()
-    this._framebuffer.Clear()
-  enddef
-
-  def Render(view: IView, viewNumber: number)
-    if PaneID() != this.id
-      return
-    endif
-
-    var lnum       = 1 + reduce(this._heights[0 : (viewNumber - 1)], (acc, val) => acc + val)
-    var body       = view.Body()
-    var old_height = this._heights[viewNumber]
-    var new_height = len(body)
-
-    if new_height != old_height # Adjust the vertical space to the new size of the view
-      if new_height > old_height
-        this._framebuffer.Shift(lnum, new_height - old_height)
-      else
-        this._framebuffer.DeleteLines(lnum + new_height, lnum + old_height - 1)
-      endif
-
-      this._heights[viewNumber] = new_height
-    endif
-
-    this._framebuffer.DrawLines(lnum, body)
-  enddef
-
-  def Add(view: IView)
-    this._heights->add(len(view.Body()))
-
-    var n = len(this._heights) - 1
-
-    react.CreateEffect(() => this.Render(view, n))
-  enddef
-endclass
-# }}}
-
-# UI Components {{{
-class RgbSliderGroup implements IView
-  var colorRef:    react.Property
-  var redSlider:   SliderView
-  var greenSlider: SliderView
-  var blueSlider:  SliderView
-  var visible:     react.Property = react.Property.new(false)
-
-  def new(this.colorRef, visible = false)
-    this.redSlider   = SliderView.new('R')
-    this.greenSlider = SliderView.new('G')
-    this.blueSlider  = SliderView.new('B')
-    this.visible.Set(visible)
+  def new(this.colorRef, visible = true)
+    this.AddView(SliderView.new('R'))
+    this.AddView(SliderView.new('G'))
+    this.AddView(SliderView.new('B'))
+    this.SetVisible(visible)
 
     # Keep the color in sync with the RGB components
     react.CreateEffect(() => {
-      if this.visible.Get()
+      if this.IsVisible()
         var [r, g, b] = libcolor.Hex2Rgb(this.colorRef.Get())
-        this.redSlider.value.Set(r)
-        this.greenSlider.value.Set(g)
-        this.blueSlider.value.Set(b)
+        (<SliderView>this.children[0]).value.Set(r)
+        (<SliderView>this.children[1]).value.Set(g)
+        (<SliderView>this.children[2]).value.Set(b)
       endif
     })
 
     react.CreateEffect(() => {
-      if this.visible.Get()
+      if this.IsVisible()
         this.colorRef.Set(
           libcolor.Rgb2Hex(
-          this.redSlider.value.Get(),
-          this.greenSlider.value.Get(),
-          this.blueSlider.value.Get()
+          (<SliderView>this.children[0]).value.Get(),
+          (<SliderView>this.children[1]).value.Get(),
+          (<SliderView>this.children[2]).value.Get()
           )
         )
       endif
     })
-
-    this.Hidden(!visible)
-  enddef
-
-  def Body(): list<TextLine>
-    return this.redSlider.Body() + this.greenSlider.Body() + this.blueSlider.Body()
-  enddef
-
-  def Hidden(state: bool)
-    this.redSlider.Hidden(state)
-    this.greenSlider.Hidden(state)
-    this.blueSlider.Hidden(state)
-    this.visible.Set(!state)
   enddef
 endclass
+# }}}
+# HsbSliderGroup {{{
+class HsbSliderGroup extends ContainerView
+  var colorRef: ColorProperty
 
-class HsbSliderGroup implements IView
-  var colorRef:         react.Property
-  var hueSlider:        SliderView
-  var saturationSlider: SliderView
-  var brightnessSlider: SliderView
-  var visible:          react.Property = react.Property.new(false)
+  def new(this.colorRef, visible = true)
+    this.AddView(SliderView.new('H'))
+    this.AddView(SliderView.new('S'))
+    this.AddView(SliderView.new('B'))
+    this.SetVisible(visible)
 
-  def new(this.colorRef, visible = false)
-    this.hueSlider        = SliderView.new('H')
-    this.saturationSlider = SliderView.new('S')
-    this.brightnessSlider = SliderView.new('B')
-    this.visible.Set(visible)
-
-    # Keep the color in sync with the HSB components
+    # Keep the color in sync with the RGB components
     react.CreateEffect(() => {
-      if this.visible.Get()
+      if this.IsVisible()
         var [h, s, b] = libcolor.Hex2Hsv(this.colorRef.Get())
-        this.hueSlider.value.Set(h)
-        this.saturationSlider.value.Set(s)
-        this.brightnessSlider.value.Set(b)
+        (<SliderView>this.children[0]).value.Set(h)
+        (<SliderView>this.children[1]).value.Set(s)
+        (<SliderView>this.children[2]).value.Set(b)
       endif
     })
 
     react.CreateEffect(() => {
-      if this.visible.Get()
+      if this.IsVisible()
         this.colorRef.Set(
           libcolor.Hsv2Hex(
-          this.hueSlider.value.Get(),
-          this.saturationSlider.value.Get(),
-          this.brightnessSlider.value.Get()
+          (<SliderView>this.children[0]).value.Get(),
+          (<SliderView>this.children[1]).value.Get(),
+          (<SliderView>this.children[2]).value.Get()
           )
         )
       endif
     })
-
-    this.Hidden(!visible)
-  enddef
-
-  def Body(): list<TextLine>
-    return this.hueSlider.Body() + this.saturationSlider.Body() + this.brightnessSlider.Body()
-  enddef
-
-  def Hidden(state: bool)
-    this.hueSlider.Hidden(state)
-    this.saturationSlider.Hidden(state)
-    this.brightnessSlider.Hidden(state)
-    this.visible.Set(!state)
   enddef
 endclass
-
-class GrayscaleSliderGroup implements IView
-  var colorRef:        react.Property
-  var header:          GrayscaleSectionView
-  var grayscaleSlider: SliderView
-  var visible:         react.Property = react.Property.new(false)
+# }}}
+# GrayscaleSlider {{{
+class GrayscaleSlider extends ContainerView
+  var colorRef: ColorProperty
 
   def new(this.colorRef, visible = false)
-    this.header           = GrayscaleSectionView.new()
-    this.grayscaleSlider  = SliderView.new('G')
+    this.AddView(GrayscaleSectionView.new())
+    this.AddView(SliderView.new('G'))
+    this.SetVisible(visible)
 
     # Keep the color in sync with the grayscale level
     react.CreateEffect(() => {
-      if this.visible.Get()
+      if this.IsVisible()
         var gray = libcolor.Hex2Gray(this.colorRef.Get())
-        this.grayscaleSlider.value.Set(gray)
+        (<SliderView>this.children[1]).value.Set(gray)
       endif
     })
 
@@ -1362,27 +1149,15 @@ class GrayscaleSliderGroup implements IView
     #     this.colorRef.Set(libcolor.Gray2Hex(this.grayscaleSlider.value.Get()))
     #   endif
     # })
-
-    this.Hidden(!visible)
-  enddef
-
-  def Body(): list<TextLine>
-    return this.header.Body() + this.grayscaleSlider.Body()
-  enddef
-
-  def Hidden(state: bool)
-    this.header.Hidden(state)
-    this.grayscaleSlider.Hidden(state)
-    this.visible.Set(!state)
   enddef
 endclass
-
-class ColorPaletteGroup implements IView
-  var paletteRef:       react.Property # List of (recent or favorite) colors
-  var bufnr:            number
-  var titleView:        SectionTitleView
-  var colorSliceViews:  list<ColorSliceView> = []
-  var numColorsPerLine: number               = kNumColorsPerLine
+# }}}
+# ColorPalette {{{
+class ColorPalette extends ContainerView
+  var paletteRef: react.Property # List of (recent or favorite) colors
+  var titleView:  SectionTitleView
+  var bufnr:      number
+  var numColorsPerLine = kNumColorsPerLine
 
   def new(
       this.paletteRef,
@@ -1390,39 +1165,17 @@ class ColorPaletteGroup implements IView
       this.bufnr,
       this.numColorsPerLine = v:none
       )
-    this.titleView = SectionTitleView.new(title)
+    this.AddView(SectionTitleView.new(title))
     this.AddColorSlices_()
-  enddef
-
-  def Body(): list<TextLine>
-    var content: list<TextLine> = []
-
-    content += this.titleView.Body()
-
-    this.AddColorSlices_()
-
-    for view in this.colorSliceViews
-      content += view.Body()
-    endfor
-
-    return content
-  enddef
-
-  def Hidden(state: bool)
-    this.titleView.Hidden(state)
-
-    for view in this.colorSliceViews
-      view.Hidden(state)
-    endfor
   enddef
 
   def AddColorSlices_() # Dynamically add slices to accommodate all the colors
     var palette   = this.paletteRef.Get()
     var numColors = len(palette)
-    var numSlots  = len(this.colorSliceViews) * this.numColorsPerLine
+    var numSlots  = len(this.children) * this.numColorsPerLine
 
     while numSlots < numColors
-      this.colorSliceViews->add(ColorSliceView.new(
+      this.children->add(ColorSliceView.new(
         this.paletteRef,
         numSlots,
         numSlots + this.numColorsPerLine,
@@ -1432,73 +1185,25 @@ class ColorPaletteGroup implements IView
     endwhile
   enddef
 endclass
-
-def MakeHelpPane(framebuffer: FrameBuffer): Pane
-  var pane = Pane.new(kHelpPane, framebuffer)
-  pane.Add(HelpView.new())
-
-  return pane
-enddef
-
-class MainPane
-  var colorRef:            react.Property
-  var recentColorsRef:     react.Property
-  var favoriteColorsRef:   react.Property
-  var favoriteSliceViews:  react.Property
-  var pane:                Pane
-  var headerView:          HeaderView
-  var rgbSliderGroup:      RgbSliderGroup
-  var hsbSliderGroup:      HsbSliderGroup
-  var graySliderGroup:     GrayscaleSliderGroup
-  var stepView:            StepView
-  var colorInfoView:       ColorInfoView
-  var quotationView:       QuotationView
-  var recentColorsGroup:   ColorPaletteGroup
-  var favoriteColorsGroup: ColorPaletteGroup
-  var footerView:          FooterView
-
-  var numColorsPerLine = kNumColorsPerLine
-
-  def new(framebuffer: FrameBuffer, this.colorRef, this.favoriteColorsRef)
-    this.pane                = Pane.new(kMainPane, framebuffer)
-    this.headerView          = HeaderView.new()
-    this.rgbSliderGroup      = RgbSliderGroup.new(this.colorRef, true)
-    this.hsbSliderGroup      = HsbSliderGroup.new(pColor, true)
-    this.graySliderGroup     = GrayscaleSliderGroup.new(pColor, false)
-    this.stepView            = StepView.new()
-    this.colorInfoView       = ColorInfoView.new()
-    this.quotationView       = QuotationView.new()
-    this.footerView          = FooterView.new()
-    this.recentColorsGroup   = ColorPaletteGroup.new(
-      pRecent, 'Recent colors', framebuffer.bufnr
-    )
-    this.favoriteColorsGroup = ColorPaletteGroup.new(
-      pFavorite, 'Favorite colors', framebuffer.bufnr
-    )
-    var blankView = BlankView.new()
-
-    this.pane.Add(this.headerView)
-    this.pane.Add(this.rgbSliderGroup.redSlider)
-    this.pane.Add(this.rgbSliderGroup.greenSlider)
-    this.pane.Add(this.rgbSliderGroup.blueSlider)
-    this.pane.Add(blankView)
-    this.pane.Add(this.hsbSliderGroup.hueSlider)
-    this.pane.Add(this.hsbSliderGroup.saturationSlider)
-    this.pane.Add(this.hsbSliderGroup.brightnessSlider)
-    this.pane.Add(this.graySliderGroup.grayscaleSlider)
-    this.pane.Add(this.stepView)
-    this.pane.Add(this.colorInfoView)
-    this.pane.Add(this.quotationView)
-    this.pane.Add(this.recentColorsGroup)
-    this.pane.Add(blankView)
-    this.pane.Add(this.favoriteColorsGroup)
-    this.pane.Add(blankView)
-    this.pane.Add(this.footerView)
-
-    this.rgbSliderGroup.redSlider.Selected(true)
+# }}}
+# MainPane {{{
+class MainPane extends ContainerView
+  def new(bufnr: number, colorRef: ColorProperty)
+    this.AddView(HeaderView.new())
+    this.AddView(BlankView.new())
+    this.AddView(RgbSliderGroup.new(colorRef))
+    this.AddView(HsbSliderGroup.new(colorRef, false))
+    this.AddView(GrayscaleSlider.new(colorRef, false))
+    this.AddView(StepView.new())
+    this.AddView(BlankView.new())
+    this.AddView(ColorInfoView.new())
+    this.AddView(BlankView.new())
+    this.AddView(QuotationView.new())
+    this.AddView(BlankView.new())
   enddef
 endclass
 # }}}
+
 # Actions {{{
 def ActionNoop()
 enddef
@@ -1688,9 +1393,13 @@ def StylePicker(
 
   setbufvar(bufnr, '&tabstop', &tabstop)  # Inherit global tabstop value
 
+  for property in sPool
+    property.Clear()
+  endfor
+
   InitHighlight()
   InitTextPropertyTypes(bufnr)
-  SetHiGroup(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
+  pHiGroup.Set(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
   SetEdited(false)
   SetPaneID(kMainPane)
   SetSelectedID(kRedSlider)
@@ -1699,18 +1408,14 @@ def StylePicker(
     SetFavorite(LoadPalette(Config.FavoritePath()))
   endif
 
-  var framebuffer = FrameBuffer.new(bufnr)
-  var helpPane = MakeHelpPane(framebuffer)
+  var mainPane = MainPane.new(bufnr, pColor)
 
-  MainPane.new(framebuffer, pColor, pFavorite)
+  ui.StartRendering(mainPane, bufnr)
 
   if empty(hiGroup)
     TrackCursorAutoCmd()
   endif
 
-  var foo = pFavorite.Get()
-  foo->add('#a48291')
-  pFavorite.Set(foo, true)
   popup_show(winid)
 
   return winid
@@ -1718,46 +1423,12 @@ enddef
 # }}}
 # Public Interface {{{
 export def Open(hiGroup = '')
-  if sWinID > 0
+  if sWinID > 0 # FIXME: && the popup still exists
     popup_show(sWinID)
+    return
   endif
 
   Init()
   sWinID = StylePicker(hiGroup, sX, sY)
 enddef
 # }}}
-# Tests {{{
-if !get(g:, 'test_mode', false)
-  finish
-endif
-
-import 'libtinytest.vim' as tt
-
-
-def Test_StylePicker_CreateLine()
-  var l0 = TextLine.new('hello')
-
-  assert_equal('hello', l0.text)
-  assert_equal([], l0.props)
-
-  var p0 = TextProperty.new('stylepicker_foo', 0, 5, 42)
-
-  l0.props->add(p0)
-
-  var textWithProperty = l0.Format()
-  var expected = {text: 'hello', props: [{col: 1, length: 5, type: 'stylepicker_foo', id: 42}]}
-
-  assert_equal(expected, l0.Format())
-enddef
-
-def Test_StylePicker_TextProperty()
-  var text = "❯❯ XYZ"
-  var l0 = TextLine.new(text)->WithStyle('foo', 3, 4, 42)
-  var textWithProperty = l0.Format()
-
-  var expected = {text: text, props: [{col: 8, length: 1, type: 'foo', id: 42}]}
-
-  assert_equal(expected, l0.Format())
-enddef
-
-tt.Run('StylePicker')
