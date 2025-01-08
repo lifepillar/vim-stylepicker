@@ -1,5 +1,10 @@
 vim9script
 
+#   # A simple line-oriented UI library.
+#  # "Line-oriented" means that the rendering unit is a full horizontal line
+# # rather than a single character. Views can be vertically stacked, but not
+## horizontally. This works fine for the style picker UI.
+
 import 'libreactive.vim' as react
 
 export class TextProperty
@@ -85,9 +90,9 @@ export class View
   #  # Base class for all views and containers.
   # #
   ##
-  var  parent:    View         = null_object
-  var  children:  list<View>   = []
-  var _visible: react.Property = react.Property.new(true)
+  var  parent:    View           = null_object
+  var  children:  list<View>     = []
+  var _visible:   react.Property = react.Property.new(true)
 
   def Body(): list<TextLine>
     return []
@@ -103,6 +108,10 @@ export class View
 
   def IsVisible(): bool
     return this._visible.Get()
+  enddef
+
+  def IsSelectable(): bool
+    return false
   enddef
 
   def RespondToEvent(lnum: number, keyCode: string): bool
@@ -136,10 +145,10 @@ export class LeafView extends View
   #  # A leaf view has actual content that can be drawn in a buffer.
   # #
   ##
-  var  _collapsed  = react.Property.new(false)
-  var  _content    = react.Property.new([])
-  var  _old_height = 0 # Height of the view last time it was rendered
-  var  _height     = 0 # Current height of the view
+  var _collapsed  = react.Property.new(false)
+  var _content    = react.Property.new([])
+  var _old_height = 0 # Height of the view last time it was rendered
+  var _height     = 0 # Current height of the view
 
   def Body(): list<TextLine>
     if this._collapsed.Get()
@@ -261,23 +270,7 @@ export class ContainerView extends View
   enddef
 endclass
 
-export interface IUpdatable
-  #   #
-  #  # Interface for (leaf) views whose content is not static.
-  # #
-  ##
-  def Update()
-endinterface
-
-export interface ISelectable extends IUpdatable
-  #   #
-  #  # Interface for (leaf) views that can be selected to be updated.
-  # #
-  ##
-  var selected: react.Property # bool
-endinterface
-
-export class UpdatableView extends LeafView implements IUpdatable
+export class UpdatableView extends LeafView
   #   # A leaf view which is automatically updated when its observed state
   #  # changes. Subclasses should call super.Init() in new() and override
   # # Update().
@@ -290,15 +283,31 @@ export class UpdatableView extends LeafView implements IUpdatable
   enddef
 endclass
 
-export class SelectableView extends UpdatableView implements ISelectable
+export class SelectableView extends UpdatableView
   #   #
   #  # An updatable view that can be selected to modify its observed state.
   # # Subclasses should call super.Init() in new() and override Update().
   ##
-  var selected = react.Property.new(false)
+  var _selected = react.Property.new(false)
+
+  def SetSelected(state: bool)
+    this._selected.Set(state)
+  enddef
+
+  def IsSelected(): bool
+    return this._selected.Get()
+  enddef
+
+  def IsSelectable(): bool
+    return true
+  enddef
 endclass
 
 export def StartRendering(view: View, bufnr: number)
+  #   #
+  #  # Call this function after setting up the view hierarchy to start
+  # # rendering the view content in a buffer.
+  ##
   if empty(view.children)
     react.CreateEffect(() => (<LeafView>view).Render(bufnr))
     return
