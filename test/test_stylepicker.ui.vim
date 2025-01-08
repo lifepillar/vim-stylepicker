@@ -29,7 +29,8 @@ class TestLeafView extends LeafView
     var handled = (keyCode == 'K')
 
     if handled
-      this.eventTarget = this._content.Get()[lnum - 1].text
+      var content: list<TextLine> = this._content.Get()
+      this.eventTarget = content[lnum - 1].text
     endif
 
     return handled
@@ -95,7 +96,7 @@ def Test_StylePicker_LeafView()
   assert_equal(expected, leafView.Body())
 enddef
 
-def Test_StylePickerRenderView()
+def Test_StylePicker_RenderView()
   var content = ['a', 'b', 'c']
   var view = TestLeafView.new(content)
 
@@ -176,7 +177,7 @@ def Test_StylePicker_ContainerView()
   endtry
 enddef
 
-def Test_StylePickerUpdatableView()
+def Test_StylePicker_UpdatableView()
   var p1 = react.Property.new('initial text')
   var updatableView = TestUpdatableView.new(p1)
   var containerView = ContainerView.new()
@@ -199,7 +200,7 @@ def Test_StylePickerUpdatableView()
   endtry
 enddef
 
-def Test_StylePickerViewFollowedByContainer()
+def Test_StylePicker_ViewFollowedByContainer()
   var header        = TestLeafView.new(['Header'])
   var r             = TestLeafView.new(['r'])
   var g             = TestLeafView.new(['g'])
@@ -223,13 +224,12 @@ def Test_StylePickerViewFollowedByContainer()
   finally
     execute 'bwipe!' bufnr
   endtry
-
 enddef
 
-def Test_StylePickerRespondToEvent()
+def Test_StylePicker_RespondToEvent()
   var v1             = TestLeafView.new(['a', 'b', 'c'])
   var v2             = TestLeafView.new(['d', 'e'])
-  var v3             = TestLeafView.new(['f', 'g'])
+  var v3             = TestLeafView.new(['f', 'g', 'h', 'i'])
   var innerContainer = ContainerView.new()
   var containerView  = ContainerView.new()
 
@@ -238,27 +238,45 @@ def Test_StylePickerRespondToEvent()
   containerView.AddView(innerContainer)
   containerView.AddView(v3)
 
-  var handled = containerView.RespondToEvent(2, 'N')
+  # Until the views are rendered, their height is not set
+  assert_equal(0, v1.Height())
+  assert_equal(0, v2.Height())
+  assert_equal(0, v3.Height())
 
-  assert_false(handled)
-  assert_equal('', v1.eventTarget)
+  var bufnr = bufadd('StylePicker test buffer')
+  bufload(bufnr)
 
-  handled = containerView.RespondToEvent(2, 'K')
+  try
+    ui.StartRendering(containerView, bufnr)
 
-  assert_true(handled)
-  assert_equal('b', v1.eventTarget)
-  assert_equal('',  v2.eventTarget)
+    assert_equal(3, v1.Height())
+    assert_equal(2, v2.Height())
+    assert_equal(4, v3.Height())
 
-  handled = containerView.RespondToEvent(5, 'K')
+    var handled = containerView.RespondToEvent(2, 'N')
 
-  assert_true(handled)
-  assert_equal('e', v2.eventTarget)
-  assert_equal('b',  v1.eventTarget)
+    assert_false(handled)
+    assert_equal('', v1.eventTarget)
 
-  handled = containerView.RespondToEvent(6, 'K')
+    handled = containerView.RespondToEvent(2, 'K')
 
-  assert_true(handled)
-  assert_equal('f', v3.eventTarget)
+    assert_true(handled)
+    assert_equal('b', v1.eventTarget)
+    assert_equal('',  v2.eventTarget)
+
+    handled = containerView.RespondToEvent(5, 'K')
+
+    assert_true(handled)
+    assert_equal('e', v2.eventTarget)
+    assert_equal('b',  v1.eventTarget)
+
+    handled = containerView.RespondToEvent(6, 'K')
+
+    assert_true(handled)
+    assert_equal('f', v3.eventTarget)
+  finally
+    execute 'bwipe!' bufnr
+  endtry
 enddef
 
 tt.Run('StylePicker')

@@ -23,7 +23,7 @@ export class TextLine
 
   def Format(): dict<any>
     #   #
-    #  # Return the text line as a dictionary suitable for a popup.
+    #  # Return the text line as a dictionary suitable for popup_settext().
     # #
     ##
     var props: list<dict<any>> = []
@@ -93,6 +93,10 @@ export class View
     return []
   enddef
 
+  def Height(): number
+    return 0
+  enddef
+
   def SetVisible(state: bool)
     this._visible.Set(state)
   enddef
@@ -106,21 +110,21 @@ export class View
   enddef
 endclass
 
-def Height(view: View): number
-  return len(view.Body())
-enddef
-
 def LineNumber(view: View): number
+  #   # Return the line number where `view` should be drawn.
+  #  # Note that this function must be pure: to avoid side effects, it should
+  # # not (directly or indirectly) access any property.
+  ##
   if view.parent == null
     return 1
   endif
 
   var i = 0
-  var items = view.parent.children
   var lnum = LineNumber(view.parent)
+  var items = view.parent.children
 
   while i < len(items) && items[i] isnot view
-    lnum += Height(items[i])
+    lnum += items[i].Height()
     ++i
   endwhile
 
@@ -132,11 +136,10 @@ export class LeafView extends View
   #  # A leaf view has actual content that can be drawn in a buffer.
   # #
   ##
-  var  _collapsed = react.Property.new(false)
-  var  _content   = react.Property.new([])
-  # The height of the view last time it was rendered: it may be different from
-  # len(this.Body()).
-  var  _height  = 0
+  var  _collapsed  = react.Property.new(false)
+  var  _content    = react.Property.new([])
+  var  _old_height = 0 # Height of the view last time it was rendered
+  var  _height     = 0 # Current height of the view
 
   def Body(): list<TextLine>
     if this._collapsed.Get()
@@ -146,43 +149,51 @@ export class LeafView extends View
     return this._content.Get()
   enddef
 
+  def Height(): number
+    #   # Return the height of this view.
+    #  #
+    # # NOTE: returns the correct height only after the view has been
+    ## rendered at least once and only if the view is visible.
+    return this._height
+  enddef
+
   def SetVisible(state: bool)
-    this._collapsed.Set(!state)
-    this._visible.Set(state)
+    this._collapsed.Set(!state) # Remove the view from the buffer
+    this._visible.Set(state) # Stop observing this.Body()'s properties
   enddef
 
   def Render(bufnr: number)
     #   # Render a view in a buffer. This method may be called inside
     #  # an effect to automatically re-render a view.
-    # # Accesses two properties: visible and (indirectly) _collapsed.
-    ##
+    # # Accesses two properties: this._visible and this._collapsed (the latter
+    ##  indirectly via this.Body()).
     if !this._visible.Get()
       return
     endif
 
-    var lnum       = LineNumber(this)
-    var body       = this.Body()
-    var old_height = this._height
-    var new_height = len(body)
+    var lnum         = LineNumber(this)
+    var body         = this.Body()
+    var old_height   = this._old_height
+    var this._height = len(this.Body())
 
-    if new_height == old_height # Fast path
+    if this._height == old_height # Fast path
       DrawLines(bufnr, lnum, body)
       return
     endif
 
     # Adjust the vertical space to the new size of the view
-    if new_height > old_height
+    if this._height > old_height
       var linecount  = getbufinfo(bufnr)[0].linecount
       var is_empty = linecount == 1 && empty(getbufoneline(bufnr, 1))
 
       if !is_empty
-        appendbufline(bufnr, lnum, repeat([''], new_height - old_height))
+        appendbufline(bufnr, lnum, repeat([''], this._height - old_height))
       endif
     else
-      deletebufline(bufnr, lnum + new_height, lnum + old_height - 1)
+      deletebufline(bufnr, lnum + this._height, lnum + old_height - 1)
     endif
 
-    this._height = new_height
+    this._old_height = this._height
 
     DrawLines(bufnr, lnum, body)
   enddef
@@ -203,6 +214,16 @@ export class ContainerView extends View
     return body
   enddef
 
+  def Height(): number
+    var height = 0
+
+    for child in this.children
+      height += child.Height()
+    endfor
+
+    return height
+  enddef
+
   def SetVisible(state: bool)
     for child in this.children
       child.SetVisible(state)
@@ -217,14 +238,14 @@ export class ContainerView extends View
   enddef
 
   def RespondToEvent(lnum: number, keyCode: string): bool
-    var lnum_ = lnum
-    var i          = 0
-    var handled    = false
+    var lnum_   = lnum
+    var i       = 0
+    var handled = false
 
     # Find the child containing lnum
     while i < len(this.children)
-      var view = this.children[i]
-      var height = len(view.Body())
+      var view   = this.children[i]
+      var height = view.Height()
 
       if lnum_ <= height # Forward the event to the child
         handled = view.RespondToEvent(lnum_, keyCode)
