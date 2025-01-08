@@ -21,9 +21,6 @@ type ContainerView  = ui.ContainerView
 
 const kNumColorsPerLine = 10
 
-# Selectable items
-const kRedSlider = 128
-
 const kUltimateFallbackColor = {
   'bg': {'dark': '#000000', 'light': '#ffffff'},
   'fg': {'dark': '#ffffff', 'light': '#000000'},
@@ -109,8 +106,7 @@ var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',    1.0     
 var zindex:          number       = get(g:, 'stylepicker_zindex',       50                                      )
 # }}}
 # Internal State {{{
-var sEventHandled: bool                 = false # Set to true if a key or mouse event was handled
-var sKeyCode:      string               = ''    # Last key pressed
+var sRootView:     ContainerView                # The top view of the style picker
 var sWinID:        number               = -1    # ID of the style picker popup
 var sX:            number               = 0     # Horizontal position of the style picker
 var sY:            number               = 0     # Vertical position of the style picker
@@ -136,9 +132,6 @@ class Config
   static var StepDelay       = () => stepdelay
   static var ZIndex          = () => zindex
 endclass
-
-def Init()
-enddef
 # }}}
 # Helper Functions {{{
 def In(v: any, items: list<any>): bool
@@ -417,18 +410,12 @@ def ChooseTermColor(): string
 enddef
 # }}}
 # Global Reactive State {{{
-def GetSet(value: any, pool = sPool): list<any>
-  var p_ = react.Property.new(value, pool)
-  return [p_, p_.Get, p_.Set]
-enddef
-
-var [pPaneID,     PaneID,       SetPaneID    ] = GetSet(0)        # ID of the current pane
-var [pSelectedID, SelectedID,   SetSelectedID] = GetSet(0)        # Text property ID of the currently selected line
-var [pHiGroup,    HiGroup,      SetHiGroup   ] = GetSet('Normal') # Current highlight group
-var [pRecent,     Recent,       SetRecent    ] = GetSet([])       # List of recent colors
-var [pFavorite,   Favorite,     SetFavorite  ] = GetSet([])       # List of favorite colors
-var [pFgBgSp,     FgBgSp,       SetFgBgSp    ] = GetSet('fg')     # Current color attribute ('fg', 'bg', or 'sp')
-var [pEdited,     Edited,       SetEdited    ] = GetSet(false)    # Was the current color attribute modified by the style picker?
+var pSelectedID = react.Property.new(0,        sPool) # Text property ID of the currently selected line
+var pHiGroup    = react.Property.new('Normal', sPool) # Current highlight group
+var pRecent     = react.Property.new([],       sPool) # List of recent colors
+var pFavorite   = react.Property.new([],       sPool) # List of favorite colors
+var pFgBgSp     = react.Property.new('fg',     sPool) # Current color attribute ('fg', 'bg', or 'sp')
+var pEdited     = react.Property.new(false,    sPool) # Was the current color attribute modified by the style picker?
 
 class ColorProperty extends react.Property
   #   #
@@ -440,7 +427,7 @@ class ColorProperty extends react.Property
   enddef
 
   def Get(): string
-    this.value = GetHiGroupColor(HiGroup(), FgBgSp())
+    this.value = GetHiGroupColor(pHiGroup.Get(), pFgBgSp.Get())
     return super.Get()
   enddef
 
@@ -449,10 +436,10 @@ class ColorProperty extends react.Property
       return
     endif
 
-    var fgBgSp           = FgBgSp()
+    var fgBgSp           = pFgBgSp.Get()
     var guiAttr          = 'gui' .. fgBgSp
     var ctermAttr        = 'cterm' .. NormalizeAttr(fgBgSp, 'cterm')
-    var attrs: dict<any> = {name: HiGroup(), [guiAttr]: newValue}
+    var attrs: dict<any> = {name: pHiGroup.Get(), [guiAttr]: newValue}
 
     if newValue == 'NONE'
       attrs[ctermAttr] = 'NONE'
@@ -462,7 +449,6 @@ class ColorProperty extends react.Property
 
     hlset([attrs])
     super.Set(newValue, force)
-    echomsg $'  Color set to {newValue}'
   enddef
 endclass
 
@@ -489,7 +475,7 @@ class StyleProperty extends react.Property
   enddef
 
   def Get(): dict<bool>
-    var hl = hlget(HiGroup(), true)[0]
+    var hl = hlget(pHiGroup.Get(), true)[0]
     var style: dict<bool> = extendnew(
       StyleProperty.styles, get(hl, 'gui', get(hl, 'cterm', {})), 'force' # FIXME
     )
@@ -506,7 +492,7 @@ class StyleProperty extends react.Property
   def Set(value: dict<bool>, force = true)
     var style = filter(value, (_, v) => v)
 
-    hlset([{name: HiGroup(), 'gui': style, 'cterm': style}])
+    hlset([{name: pHiGroup.Get(), 'gui': style, 'cterm': style}])
     super.Set(value, force)
   enddef
 endclass
@@ -514,8 +500,6 @@ endclass
 # These are initialized automatically at the first Get() or Set()
 var pColor = ColorProperty.new('#000000', sPool) # Value of the current color
 var pStyle = StyleProperty.new({}, sPool) # Dictionary of style attributes
-var [Color, SetColor] = [pColor.Get, pColor.Set]
-var [Style, SetStyle] = [pStyle.Get, pStyle.Set]
 # }}}
 # Autocommands {{{
 def ColorschemeChangedAutoCmd()
@@ -526,7 +510,7 @@ enddef
 
 def TrackCursorAutoCmd()
   augroup StylePicker
-    autocmd CursorMoved * SetHiGroup(HiGroupUnderCursor())
+    autocmd CursorMoved * pHiGroup.Set(HiGroupUnderCursor())
   augroup END
 enddef
 
@@ -638,12 +622,13 @@ def InitTextPropertyTypes(bufnr: number)
   }
 
   for [propType, propValue] in items(propTypes)
+    prop_type_delete(propType, {bufnr: bufnr})
     prop_type_add(propType, propValue)
   endfor
 
   # Sync the text property with the current highlight group
   react.CreateEffect(() => {
-    prop_type_change(kPropTypeCurrentHighlight, {bufnr: bufnr, highlight: HiGroup()})
+    prop_type_change(kPropTypeCurrentHighlight, {bufnr: bufnr, highlight: pHiGroup.Get()})
   })
 enddef
 
@@ -698,9 +683,9 @@ class HeaderView extends UpdatableView
   enddef
 
   def Update()
-    var hiGroup = HiGroup()
-    var fgBgSp  = FgBgSp()
-    var aStyle  = Style()
+    var hiGroup = pHiGroup.Get()
+    var fgBgSp  = pFgBgSp.Get()
+    var aStyle  = pStyle.Get()
 
     var attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
     var width   = Config.PopupWidth()
@@ -756,18 +741,19 @@ endclass
 # NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
 class SliderView extends SelectableView
   var name:     string               # The name of the slider (appears next to the slider)
+  var step:     react.Property       # Increment/decrement step
   var value:    react.Property       # The value displayed by the slider
   var max:      number         = 255 # Maximum value of the slider
   var min:      number         = 0   # Minimum value of the slider
 
-  def new(this.name, this.max = v:none, this.min = v:none)
+  def new(this.name, this.step, this.max = v:none, this.min = v:none)
     this.value = react.Property.new(this.min)
     super.Init()
   enddef
 
   def Update()
     var value       = this.value.Get()
-    var gutter      = this.selected.Get() ? Config.Marker() : Config.Gutter()
+    var gutter      = this.IsSelected() ? Config.Marker() : Config.Gutter()
     var gutterWidth = Config.GutterWidth()
     var width       = Config.PopupWidth() - gutterWidth - 6
     var symbols     = Config.SliderSymbols()
@@ -784,6 +770,22 @@ class SliderView extends SelectableView
       ->Tagged(kPropTypeSlider)
       ->Tagged(kPropTypeSelectable)
     ])
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    if keyCode == kIncrementKey
+      this.Increment(this.step.Get())
+
+      return true
+    endif
+
+    if keyCode == kDecrementKey
+      this.Decrement(this.step.Get())
+
+      return true
+    endif
+
+    return false
   enddef
 
   def Increment(by: number)
@@ -830,9 +832,9 @@ class ColorInfoView extends UpdatableView
   enddef
 
   def Update()
-    var hiGrp       = HiGroup()
-    var fgBgSp      = FgBgSp()
-    var curColor    = Color()
+    var hiGrp       = pHiGroup.Get()
+    var fgBgSp      = pFgBgSp.Get()
+    var curColor    = pColor.Get()
 
     var altColor    = AltColor(hiGrp, fgBgSp)
     var approxCol   = libcolor.Approximate(curColor)
@@ -910,8 +912,7 @@ class ColorSliceView extends SelectableView
     endif
 
     var content: list<TextLine> = []
-    var selected                = this.selected.Get()
-    var gutter                  = selected ? Config.Marker() : Config.Gutter()
+    var gutter                  = this.IsSelected() ? Config.Marker() : Config.Gutter()
     var gutterWidth             = Config.GutterWidth()
     var from                    = this._from
     var to                      = Min(this._to, len(palette))
@@ -931,7 +932,7 @@ class ColorSliceView extends SelectableView
     while k < to - from
       var hexCol   = palette[from + k]
       var approx   = libcolor.Approximate(hexCol)
-      var textProp = $'stylePickerPalette_{hexCol[1 : ]}_{k}'
+      var textProp = $'stylePickerPalette_{hexCol[1 : ]}_{k}' # FIXME: optimize name
       var column   = gutterWidth + 4 * k
 
       colorsLine->WithStyle(textProp, column, column + 3)
@@ -964,7 +965,7 @@ class FooterView extends UpdatableView
   enddef
 endclass
 # }}}
-# Help View {{{
+# HelpView {{{
 class HelpView extends LeafView
   def new(visible = false)
     var s = [
@@ -1041,14 +1042,14 @@ class HelpView extends LeafView
   enddef
 endclass
 # }}}
-# RgbSliderGroup {{{
-class RgbSliderGroup extends ContainerView
+# RgbContainerView {{{
+class RgbContainerView extends ContainerView
   var colorRef: ColorProperty
 
-  def new(this.colorRef, visible = true)
-    this.AddView(SliderView.new('R'))
-    this.AddView(SliderView.new('G'))
-    this.AddView(SliderView.new('B'))
+  def new(this.colorRef, step: react.Property, visible = true)
+    this.AddView(SliderView.new('R', step))
+    this.AddView(SliderView.new('G', step))
+    this.AddView(SliderView.new('B', step))
     this.SetVisible(visible)
 
     # Keep the color in sync with the RGB components
@@ -1075,14 +1076,14 @@ class RgbSliderGroup extends ContainerView
   enddef
 endclass
 # }}}
-# HsbSliderGroup {{{
-class HsbSliderGroup extends ContainerView
+# HsbContainerView {{{
+class HsbContainerView extends ContainerView
   var colorRef: ColorProperty
 
-  def new(this.colorRef, visible = true)
-    this.AddView(SliderView.new('H'))
-    this.AddView(SliderView.new('S'))
-    this.AddView(SliderView.new('B'))
+  def new(this.colorRef, step: react.Property, visible = true)
+    this.AddView(SliderView.new('H', step))
+    this.AddView(SliderView.new('S', step))
+    this.AddView(SliderView.new('B', step))
     this.SetVisible(visible)
 
     # Keep the color in sync with the RGB components
@@ -1109,13 +1110,13 @@ class HsbSliderGroup extends ContainerView
   enddef
 endclass
 # }}}
-# GrayscaleSlider {{{
-class GrayscaleSlider extends ContainerView
+# GrayscaleContainerView {{{
+class GrayscaleContainerView extends ContainerView
   var colorRef: ColorProperty
 
-  def new(this.colorRef, visible = false)
+  def new(this.colorRef, step: react.Property, visible = false)
     this.AddView(GrayscaleSectionView.new())
-    this.AddView(SliderView.new('G'))
+    this.AddView(SliderView.new('G', step))
     this.SetVisible(visible)
 
     # Keep the color in sync with the grayscale level
@@ -1126,17 +1127,20 @@ class GrayscaleSlider extends ContainerView
       endif
     })
 
-    # FIXME; this "greyfies" everything (must execute only if Edited())
-    # react.CreateEffect(() => {
-    #   if this.visible.Get()
-    #     this.colorRef.Set(libcolor.Gray2Hex(this.grayscaleSlider.value.Get()))
-    #   endif
-    # })
+    # The grayscale level is synced back to the color value only if the user
+    # explicitly edits the grayscale color (otherwise everything would
+    # eventually become gray).
+    react.CreateEffect(() => {
+      if this.IsVisible() && pEdited.Get()
+        var sliderValue: number = (<SliderView>this.children[1]).value.Get()
+        this.colorRef.Set(libcolor.Gray2Hex(sliderValue))
+      endif
+    })
   enddef
 endclass
 # }}}
-# ColorPalette {{{
-class ColorPalette extends ContainerView
+# ColorPaletteContainerView {{{
+class ColorPaletteContainerView extends ContainerView
   var paletteRef: react.Property # List of (recent or favorite) colors
   var titleView:  SectionTitleView
   var bufnr:      number
@@ -1175,47 +1179,134 @@ class ColorPalette extends ContainerView
   enddef
 endclass
 # }}}
-# MainPane {{{
-class MainPane extends ContainerView
+# StylePickerContainerView {{{
+class StylePickerContainerView extends ContainerView
+  var _rgbSliderContainerView:       RgbContainerView
+  var _hsbSliderContainerView:       HsbContainerView
+  var _grayscaleSliderContainerView: GrayscaleContainerView
+
   def new(
       bufnr: number,
       colorRef: ColorProperty,
       pRecentRef: react.Property,
       pFavoriteRef: react.Property
       )
+    var stepView = StepView.new()
+
+    this._rgbSliderContainerView       = RgbContainerView.new(colorRef, stepView.value)
+    this._hsbSliderContainerView       = HsbContainerView.new(colorRef, stepView.value, false)
+    this._grayscaleSliderContainerView = GrayscaleContainerView.new(colorRef, stepView.value, false)
+
     this.AddView(HeaderView.new())
     this.AddView(BlankView.new())
-    this.AddView(RgbSliderGroup.new(colorRef))
-    this.AddView(HsbSliderGroup.new(colorRef, false))
-    this.AddView(GrayscaleSlider.new(colorRef, false))
-    this.AddView(StepView.new())
+    this.AddView(this._rgbSliderContainerView)
+    this.AddView(this._hsbSliderContainerView)
+    this.AddView(this._grayscaleSliderContainerView)
+    this.AddView(stepView)
     this.AddView(BlankView.new())
     this.AddView(ColorInfoView.new())
     this.AddView(BlankView.new())
     this.AddView(QuotationView.new())
     this.AddView(BlankView.new())
-    this.AddView(ColorPalette.new(pRecentRef, 'Recent Colors', bufnr))
-    this.AddView(ColorPalette.new(pFavoriteRef, 'Favorite Colors', bufnr))
+    this.AddView(ColorPaletteContainerView.new(pRecentRef,   'Recent Colors',   bufnr))
+    this.AddView(ColorPaletteContainerView.new(pFavoriteRef, 'Favorite Colors', bufnr))
+  enddef
+
+  def ShowRgb()
+    this.SetVisible(true)
+    this._hsbSliderContainerView.SetVisible(false)
+    this._grayscaleSliderContainerView.SetVisible(false)
+  enddef
+
+  def ShowHsb()
+    this.SetVisible(true)
+    this._grayscaleSliderContainerView.SetVisible(false)
+    this._rgbSliderContainerView.SetVisible(false)
+  enddef
+
+  def ShowGrayscale()
+    this.SetVisible(true)
+    this._rgbSliderContainerView.SetVisible(false)
+    this._hsbSliderContainerView.SetVisible(false)
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    if keyCode == kRgbPaneKey
+      this.ShowRgb()
+
+      return true
+    endif
+
+    if keyCode == kHsbPaneKey
+      this.ShowHsb()
+
+      return true
+    endif
+
+    if keyCode == kGrayPaneKey
+      this.ShowGrayscale()
+
+      return true
+    endif
+
+    return super.RespondToEvent(lnum, keyCode)
+  enddef
+endclass
+# }}}
+# RootContainerView {{{
+class RootContainerView extends ContainerView
+  var _stylePickerContainerView: StylePickerContainerView
+  var _helpView:                 HelpView
+  var _actionMap:                dict<func()>
+
+  def new(
+      bufnr:       number,
+      colorRef:    ColorProperty,
+      recentRef:   react.Property,
+      favoriteRef: react.Property
+      )
+    this._stylePickerContainerView = StylePickerContainerView.new(
+      bufnr, colorRef, recentRef, favoriteRef
+    )
+    this._helpView = HelpView.new()
+    this.AddView(this._stylePickerContainerView)
+    this.AddView(this._helpView)
+  enddef
+
+  def RespondToEvent(lnum: number, keyCode: string): bool
+    if keyCode == kCancelKey
+      ActionCancel()
+
+      return true
+    endif
+
+    if keyCode == kHelpKey
+      this._stylePickerContainerView.SetVisible(false)
+      this._helpView.SetVisible(true)
+
+      return true
+    endif
+
+    if keyCode == kUpKey
+    endif
+
+    if keyCode->In([kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
+      this._helpView.SetVisible(false)
+    endif
+
+    return this._stylePickerContainerView.RespondToEvent(lnum, keyCode)
   enddef
 endclass
 # }}}
 
-# Actions {{{
-def ActionNoop()
-enddef
-
+# Event Processing {{{
 def ActionCancel()
   popup_close(sWinID)
-  sWinID = -1
 
   # TODO: revert only the changes of the stylepicker
   if exists('g:colors_name') && !empty('g:colors_name')
     execute 'colorscheme' g:colors_name
   endif
-enddef
-
-def ActionIntercept()
-  sEventHandled = true
 enddef
 
 def ActionLeftClick()
@@ -1224,111 +1315,9 @@ def ActionLeftClick()
   if mousepos.winid == sWinID
     # TODO: dispatch event
     echo $'Mouse pressed at line {mousepos.line}, column {mousepos.column}'
-    # sEventHandled = true
   endif
 enddef
 
-def ActionKeyPress()
-  var event = KeyEvent.new('name goes here')
-enddef
-# }}}
-# Default Key Map {{{
-const kDefaultKeyMap = {
-  [kAddToFavoritesKey]:    ActionNoop,
-  [kBotKey]:               ActionNoop,
-  [kCancelKey]:            ActionCancel,
-  [kClearKey]:             ActionNoop,
-  [kCloseKey]:             ActionNoop,
-  [kDecrementKey]:         ActionIntercept,
-  [kDownKey]:              ActionNoop,
-  [kFgBgSpKey]:            ActionNoop,
-  [kSpBgFgKey]:            ActionNoop,
-  [kGrayPaneKey]:          ActionNoop,
-  [kHelpKey]:              ActionNoop,
-  [kHsbPaneKey]:           ActionNoop,
-  [kIncrementKey]:         ActionNoop,
-  [kLeftClickKey]:         ActionLeftClick,
-  [kPasteKey]:             ActionNoop,
-  [kPickKey]:              ActionNoop,
-  [kRemoveKey]:            ActionNoop,
-  [kRgbPaneKey]:           ActionNoop,
-  [kSetColorKey]:          ActionNoop,
-  [kSetHiGroupKey]:        ActionNoop,
-  [kToggleBoldKey]:        ActionNoop,
-  [kToggleItalicKey]:      ActionNoop,
-  [kToggleReverseKey]:     ActionNoop,
-  [kToggleStandoutKey]:    ActionNoop,
-  [kToggleStrikeThruKey]:  ActionNoop,
-  [kToggleTrackingKey]:    ActionNoop,
-  [kToggleUndercurlKey]:   ActionNoop,
-  [kToggleUnderdottedKey]: ActionNoop,
-  [kToggleUnderdashedKey]: ActionNoop,
-  [kToggleUnderdoubleKey]: ActionNoop,
-  [kToggleUnderlineKey]:   ActionNoop,
-  [kTopKey]:               ActionNoop,
-  [kUpKey]:                ActionNoop,
-  [kYankKey]:              ActionNoop,
-}
-# }}}
-# Sliders {{{
-# NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
-class Slider
-  var id:       number
-  var name:     string
-  var value:    react.Property
-  var max:      number = 255
-  var min:      number = 0
-  var selected: bool   = false
-  var prefix:   string = ''
-  var width:    Config.PopupWidth() - 6  # - sGutterWidth  FIXME
-  var symbols:  Config.SliderSymbols()
-
-  def new(this.id, this.name, this.value)
-    react.CreateEffect(() => {
-      if self.selected
-        if sKeyCode == "\<left>"
-          self.Decrement(1)
-        elseif sKeyCode == "\<right>"
-          self.Increment(1)
-        endif
-      endif
-    })
-  enddef
-
-  def Body(): list<string>
-    var value     = this.value.Get()
-    var range     = this.max + 1 - this.min
-    var whole     = value * this.width / range
-    var frac      = value * this.width / (1.0 * range) - whole
-    var bar       = repeat(this.symbols[-1], whole)
-    var part_char = this.symbols[1 + float2nr(floor(frac * 8))]
-    var text      = printf("%s%s %3d %s%s", this.prefix, this.name, value, bar, part_char)
-
-    return text
-  enddef
-
-  def Increment(by: number)
-    var newValue = this.value.Get() + by
-
-    if newValue > this.max
-      newValue = this.max
-    endif
-
-    this.value.Set(newValue)
-  enddef
-
-  def Decrement(by: number)
-    var newValue = this.value.Get() - by
-
-    if newValue < this.min
-      newValue = this.min
-    endif
-
-    this.value.Set(newValue)
-  enddef
-endclass
-# }}}
-# Event Processing {{{
 def ClosedCallback(winid: number, result: any = '')
   DisableAllAutocommands()
 
@@ -1338,20 +1327,14 @@ def ClosedCallback(winid: number, result: any = '')
 enddef
 
 def HandleEvent(winid: number, rawKeyCode: string): bool
-  sEventHandled = false
+  var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
-  sKeyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
-
-  if kDefaultKeyMap->has_key(sKeyCode)
-    sEventHandled = true
-    kDefaultKeyMap[sKeyCode]()
-  endif
-
-  return sEventHandled
+  return sRootView.RespondToEvent(3, keyCode)
 enddef
 # }}}
+
 # Style Picker Popup {{{
-def StylePicker(
+def StylePickerPopup(
     hiGroup:         string,
     xPos:            number,
     yPos:            number,
@@ -1359,7 +1342,7 @@ def StylePicker(
     bg:              string       = Config.Background(),
     borderChars:     list<string> = Config.BorderChars(),
     minWidth:        number       = Config.PopupWidth(),
-    allowKeyMapping: bool         = Config.AllowKeyMapping(),
+    allowKeyMapping: bool         = Config.AllowKeyMapping()
     ): number
   var winid = popup_create('', {
     border:      [1, 1, 1, 1],
@@ -1396,31 +1379,21 @@ def StylePicker(
   InitHighlight()
   InitTextPropertyTypes(bufnr)
   pHiGroup.Set(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
-  SetEdited(false)
-  SetSelectedID(kRedSlider)
+  pEdited.Set(false)
 
   if !empty(Config.FavoritePath())
-    SetFavorite(LoadPalette(Config.FavoritePath()))
+    pFavorite.Set(LoadPalette(Config.FavoritePath()))
   endif
 
-  var mainPane = MainPane.new(bufnr, pColor, pRecent, pFavorite)
-  var helpPane = ContainerView.new()
+  sRootView = RootContainerView.new(bufnr, pColor, pRecent, pFavorite)
 
-  helpPane.AddView(HelpView.new(false))
-
-  ui.StartRendering(mainPane, bufnr)
-  ui.StartRendering(helpPane, bufnr)
+  ui.StartRendering(sRootView, bufnr)
 
   if empty(hiGroup)
     TrackCursorAutoCmd()
   endif
 
   popup_show(winid)
-
-  mainPane.SetVisible(false)
-  helpPane.SetVisible(true)
-  helpPane.SetVisible(false)
-  mainPane.SetVisible(true)
 
   return winid
 enddef
@@ -1432,7 +1405,6 @@ export def Open(hiGroup = '')
     return
   endif
 
-  Init()
-  sWinID = StylePicker(hiGroup, sX, sY)
+  sWinID = StylePickerPopup(hiGroup, sX, sY)
 enddef
 # }}}
