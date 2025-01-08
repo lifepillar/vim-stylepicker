@@ -2,7 +2,7 @@ vim9script
 
 import 'libtinytest.vim'    as tt
 import 'libreactive.vim'    as react
-import 'stylepicker_ui.vim' as ui
+import 'libstylepicker.vim' as ui
 
 type TextProperty  = ui.TextProperty
 type TextLine      = ui.TextLine

@@ -9,7 +9,7 @@ endif
 # Imports {{{
 import 'libcolor.vim'       as libcolor
 import 'libreactive.vim'    as react
-import 'stylepicker_ui.vim' as ui
+import 'libstylepicker.vim' as ui
 # }}}
 # Types and Constants {{{
 type TextProperty   = ui.TextProperty
