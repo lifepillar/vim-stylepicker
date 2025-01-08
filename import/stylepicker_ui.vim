@@ -171,10 +171,11 @@ export class LeafView extends View
       return
     endif
 
-    var lnum         = LineNumber(this)
-    var body         = this.Body()
-    var old_height   = this._old_height
-    var this._height = len(this.Body())
+    var lnum       = LineNumber(this)
+    var body       = this.Body()
+    var old_height = this._old_height
+
+    this._height = len(this.Body())
 
     if this._height == old_height # Fast path
       DrawLines(bufnr, lnum, body)
