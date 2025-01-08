@@ -19,25 +19,10 @@ type UpdatableView  = ui.UpdatableView
 type SelectableView = ui.SelectableView
 type ContainerView  = ui.ContainerView
 
-const kMainPane                = 0
-const kRGBPane                 = 1
-const kHSBPane                 = 2
-const kGrayPane                = 3
-const kHelpPane                = 99
-const kNumColorsPerLine        = 10
+const kNumColorsPerLine = 10
 
 # Selectable items
-const kLabels                  = 1
-const kRedSlider               = 128
-const kGreenSlider             = 129
-const kBlueSlider              = 130
-const kHueSlider               = 131
-const kSaturationSlider        = 132
-const kBrightnessSlider        = 133
-const kGrayscaleSlider         = 134
-const kRecentColors            = 1024 # Each recent color line gets a +1 id
-const kFavoriteColors          = 8192 # Each favorite color line gets a +1 id
-const kFooter                  = 16384
+const kRedSlider = 128
 
 const kUltimateFallbackColor = {
   'bg': {'dark': '#000000', 'light': '#ffffff'},
@@ -1259,14 +1244,14 @@ const kDefaultKeyMap = {
   [kFgBgSpKey]:            ActionNoop,
   [kSpBgFgKey]:            ActionNoop,
   [kGrayPaneKey]:          ActionNoop,
-  [kHelpKey]:              () => pPaneID.Set(kHelpPane),
+  [kHelpKey]:              ActionNoop,
   [kHsbPaneKey]:           ActionNoop,
   [kIncrementKey]:         ActionNoop,
   [kLeftClickKey]:         ActionLeftClick,
   [kPasteKey]:             ActionNoop,
   [kPickKey]:              ActionNoop,
   [kRemoveKey]:            ActionNoop,
-  [kRgbPaneKey]:           () => pPaneID.Set(kMainPane),
+  [kRgbPaneKey]:           ActionNoop,
   [kSetColorKey]:          ActionNoop,
   [kSetHiGroupKey]:        ActionNoop,
   [kToggleBoldKey]:        ActionNoop,
@@ -1412,7 +1397,6 @@ def StylePicker(
   InitTextPropertyTypes(bufnr)
   pHiGroup.Set(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
   SetEdited(false)
-  SetPaneID(kMainPane)
   SetSelectedID(kRedSlider)
 
   if !empty(Config.FavoritePath())
