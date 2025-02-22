@@ -88,11 +88,18 @@ enddef
 export class View
   #   #
   #  # Base class for all views and containers.
-  # #
-  ##
-  var  parent:    View           = null_object
-  var  children:  list<View>     = []
+  # # The view hierarchy is grounded on the *natural correspondence* between
+  ## forests and binary trees. See TAOCP, §2.3.2.
+  var  parent:    View           = this
+  var  llink:     View           = this # Left subtree
+  var  rlink:     View           = this # Right subtree
+  var  ltag:      bool           = false # false=thread, true=link to first child
+  var  rtag:      bool           = false # false=thread, true=link to right sibling
   var _visible:   react.Property = react.Property.new(true)
+
+  def string(): string
+    return '[Base view]'
+  enddef
 
   def Body(): list<TextLine>
     return []
@@ -100,6 +107,38 @@ export class View
 
   def Height(): number
     return 0
+  enddef
+
+  def Next(): View
+    var nextView = this.rlink
+
+    if !this.rtag
+      return nextView
+    endif
+
+    while nextView.ltag
+      nextView = nextView.llink
+    endwhile
+
+    return nextView
+  enddef
+
+  def Previous(): View
+    var prevView = this.llink
+
+    if !this.ltag
+      return prevView
+    endif
+
+    while prevView.rtag
+      prevView = prevView.rlink
+    endwhile
+
+    return prevView
+  enddef
+
+  def FirstLeafView(): View
+    return this
   enddef
 
   def SetVisible(state: bool)
@@ -117,6 +156,9 @@ export class View
   def RespondToEvent(lnum: number, keyCode: string): bool
     return false
   enddef
+
+  def Render(bufnr: number)
+  enddef
 endclass
 
 def LineNumber(view: View): number
@@ -124,17 +166,16 @@ def LineNumber(view: View): number
   #  # Note that this function must be pure: to avoid side effects, it should
   # # not (directly or indirectly) access any property.
   ##
-  if view.parent == null
+  if view.parent is view
     return 1
   endif
 
-  var i = 0
   var lnum = LineNumber(view.parent)
-  var items = view.parent.children
+  var node = view.parent.llink
 
-  while i < len(items) && items[i] isnot view
-    lnum += items[i].Height()
-    ++i
+  while node isnot view
+    lnum += node.Height()
+    node = node.rlink
   endwhile
 
   return lnum
@@ -149,6 +190,10 @@ export class LeafView extends View
   var _content    = react.Property.new([])
   var _old_height = 0 # Height of the view last time it was rendered
   var _height     = 0 # Current height of the view
+
+  def string(): string
+    return join(mapnew(this._content.Get(), (_, line: TextLine) => line.text))
+  enddef
 
   def Body(): list<TextLine>
     if this._collapsed.Get()
@@ -172,6 +217,10 @@ export class LeafView extends View
   enddef
 
   def Render(bufnr: number)
+    react.CreateEffect(() => this.Render_(bufnr))
+  enddef
+
+  def Render_(bufnr: number)
     #   # Render a view in a buffer. This method may be called inside
     #  # an effect to automatically re-render a view.
     # # Accesses two properties: this._visible and this._collapsed (the latter
@@ -214,12 +263,67 @@ export class ContainerView extends View
   #  # A container for views and other containers.
   # #
   ##
+  def string(): string
+    if this.parent is this
+      return '[Root view]'
+    endif
+
+    return $'[Subview of {this.parent.string()}]'
+  enddef
+
+  def IsEmpty(): bool
+    return !this.ltag
+  enddef
+
+  def Child(index: number): View
+    var i = 0
+    var child = this.llink
+
+    while i < index
+      child = child.rlink
+      ++i
+    endwhile
+
+    return child
+  enddef
+
+  def NumChildren(): number
+    if this.IsEmpty()
+      return 0
+    endif
+
+    var i = 1
+    var child = this.llink
+
+    while child.rtag
+      ++i
+      child = child.rlink
+    endwhile
+
+    return i
+  enddef
+
+  def ApplyToChildren(F: func(View))
+    if this.IsEmpty()
+      return
+    endif
+
+    var node = this.llink
+
+    F(node)
+
+    while node.rtag
+      node = node.rlink
+      F(node)
+    endwhile
+  enddef
+
   def Body(): list<TextLine>
     var body: list<TextLine> = []
 
-    for child in this.children
+    this.ApplyToChildren((child: View) => {
       body += child.Body()
-    endfor
+    })
 
     return body
   enddef
@@ -227,43 +331,85 @@ export class ContainerView extends View
   def Height(): number
     var height = 0
 
-    for child in this.children
+    this.ApplyToChildren((child: View) => {
       height += child.Height()
-    endfor
+    })
 
     return height
   enddef
 
   def SetVisible(state: bool)
-    for child in this.children
+    this.ApplyToChildren((child: View) => {
       child.SetVisible(state)
-    endfor
-
+    })
     this._visible.Set(state)
+  enddef
+
+  def FirstLeafView(): View
+    var node: View = this
+
+    while node.ltag
+      node = node.llink
+    endwhile
+
+    return node
   enddef
 
   def AddView(view: View)
     view.parent = this
-    this.children->add(view)
+
+    # Adapted from TAOCP, §2.3.1 (Traversing Binary Trees), Algorithm I
+    if this.IsEmpty() # Add view as the left subtree of this
+      var leaf = view.FirstLeafView()
+
+      leaf.llink = this.llink
+      leaf.ltag  = this.ltag
+      this.llink = view
+      this.ltag  = true
+      view.rlink = this
+      view.rtag  = false
+    else # Add view as the right subtree of the rightmost child of this
+      var node = this.Previous() # Rightmost child of this
+      var leaf = view.FirstLeafView()
+
+      view.rlink = node.rlink
+      view.rtag  = node.rtag
+      node.rlink = view
+      node.rtag  = true
+      leaf.llink = node
+      leaf.ltag  = false
+    endif
+  enddef
+
+  def Render(bufnr: number)
+    this.ApplyToChildren((child: View) => child.Render(bufnr))
   enddef
 
   def RespondToEvent(lnum: number, keyCode: string): bool
+    if this.IsEmpty()
+      return false
+    endif
+
     var lnum_   = lnum
-    var i       = 0
     var handled = false
 
     # Find the child containing lnum
-    while i < len(this.children)
-      var view   = this.children[i]
-      var height = view.Height()
+    var child = this.llink
+
+    while true
+      var height = child.Height()
 
       if lnum_ <= height # Forward the event to the child
-        handled = view.RespondToEvent(lnum_, keyCode)
+        handled = child.RespondToEvent(lnum_, keyCode)
+        break
+      endif
+
+      if !child.rtag
         break
       endif
 
       lnum_ -= height
-      ++i
+      child = child.rlink
     endwhile
 
     return handled
@@ -302,18 +448,3 @@ export class SelectableView extends UpdatableView
     return true
   enddef
 endclass
-
-export def StartRendering(view: View, bufnr: number)
-  #   #
-  #  # Call this function after setting up the view hierarchy to start
-  # # rendering the view content in a buffer.
-  ##
-  if empty(view.children)
-    react.CreateEffect(() => (<LeafView>view).Render(bufnr))
-    return
-  endif
-
-  for child in view.children
-    StartRendering(child, bufnr)
-  endfor
-enddef
