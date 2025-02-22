@@ -18,22 +18,35 @@ enddef
 var sp0 = react.Property.new('')
 
 class TestLeafView extends LeafView
-  var eventTarget = ''
-
   def new(content: list<string>)
     var value = mapnew(content, (_, t): TextLine =>  TextLine.new(t))
     this._content.Set(value)
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
-    var handled = (keyCode == 'K')
-
-    if handled
-      var content: list<TextLine> = this._content.Get()
-      this.eventTarget = content[lnum - 1].text
+  def RespondToKeyEvent(keyCode: string): bool
+    if keyCode == 'K'
+      return true
     endif
 
-    return handled
+    return super.RespondToKeyEvent(keyCode)
+  enddef
+
+  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
+    if lnum == 3 || col == 11
+      return true
+    endif
+
+    return super.RespondToMouseEvent(lnum, col, keyCode)
+  enddef
+endclass
+
+class TestContainerView extends ContainerView
+  def RespondToKeyEvent(keyCode: string): bool
+    if keyCode == 'C'
+      return true
+    endif
+
+    return super.RespondToKeyEvent(keyCode)
   enddef
 endclass
 
@@ -226,54 +239,27 @@ def Test_StylePicker_ViewFollowedByContainer()
   endtry
 enddef
 
-def Test_StylePicker_RespondToEvent()
-  var v1             = TestLeafView.new(['a', 'b', 'c'])
-  var v2             = TestLeafView.new(['d', 'e'])
-  var v3             = TestLeafView.new(['f', 'g', 'h', 'i'])
-  var innerContainer = ContainerView.new()
-  var containerView  = ContainerView.new()
+def Test_StylePicker_RespondToKeyEvent()
+  var v1 = TestLeafView.new(['a', 'b', 'c'])
+  var c1 = TestContainerView.new()
+  var root = ContainerView.new()
 
-  innerContainer.AddView(v1)
-  innerContainer.AddView(v2)
-  containerView.AddView(innerContainer)
-  containerView.AddView(v3)
+  c1.AddView(v1)
+  root.AddView(c1)
 
   # Until the views are rendered, their height is not set
   assert_equal(0, v1.Height())
-  assert_equal(0, v2.Height())
-  assert_equal(0, v3.Height())
 
   var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
 
   try
-    containerView.Render(bufnr)
+    root.Render(bufnr)
 
     assert_equal(3, v1.Height())
-    assert_equal(2, v2.Height())
-    assert_equal(4, v3.Height())
-
-    var handled = containerView.RespondToEvent(2, 'N')
-
-    assert_false(handled)
-    assert_equal('', v1.eventTarget)
-
-    handled = containerView.RespondToEvent(2, 'K')
-
-    assert_true(handled)
-    assert_equal('b', v1.eventTarget)
-    assert_equal('',  v2.eventTarget)
-
-    handled = containerView.RespondToEvent(5, 'K')
-
-    assert_true(handled)
-    assert_equal('e', v2.eventTarget)
-    assert_equal('b',  v1.eventTarget)
-
-    handled = containerView.RespondToEvent(6, 'K')
-
-    assert_true(handled)
-    assert_equal('f', v3.eventTarget)
+    assert_true(v1.RespondToKeyEvent('K'))
+    assert_true(v1.RespondToKeyEvent('C'))
+    assert_false(v1.RespondToKeyEvent('X'))
   finally
     execute 'bwipe!' bufnr
   endtry

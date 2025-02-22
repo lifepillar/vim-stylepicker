@@ -14,6 +14,7 @@ import 'libstylepicker.vim' as ui
 # Types and Constants {{{
 type TextProperty   = ui.TextProperty
 type TextLine       = ui.TextLine
+type View           = ui.View
 type LeafView       = ui.LeafView
 type UpdatableView  = ui.UpdatableView
 type SelectableView = ui.SelectableView
@@ -51,8 +52,8 @@ const kClearKey             = "Z"
 const kCloseKey             = "x"
 const kDecrementKey         = "\<left>"
 const kDownKey              = "\<down>"
-const kFgBgSpKey            = "\<s-tab>"
-const kSpBgFgKey            = "\<tab>"
+const kFgBgSpKey            = "\<tab>"
+const kSpBgFgKey            = "\<s-tab>"
 const kGrayPaneKey          = "G"
 const kHelpKey              = "?"
 const kHsbPaneKey           = "H"
@@ -111,6 +112,7 @@ var sWinID:        number               = -1    # ID of the style picker popup
 var sX:            number               = 0     # Horizontal position of the style picker
 var sY:            number               = 0     # Vertical position of the style picker
 var sPool:         list<react.Property> = []    # Global property pool. See :help libreactive-pools
+var sFocusView:    SelectableView       = null_object # Currently selected view
 
 class Config
   static var Ascii           = () => ascii
@@ -408,14 +410,19 @@ def ChooseTermColor(): string
 
   return ''
 enddef
+
+def SelectView(view: SelectableView)
+  sFocusView.SetSelected(false)
+  sFocusView = view
+  sFocusView.SetSelected(true)
+enddef
 # }}}
 # Global Reactive State {{{
-var pSelectedID = react.Property.new(0,        sPool) # Text property ID of the currently selected line
-var pHiGroup    = react.Property.new('Normal', sPool) # Current highlight group
-var pRecent     = react.Property.new([],       sPool) # List of recent colors
-var pFavorite   = react.Property.new([],       sPool) # List of favorite colors
-var pFgBgSp     = react.Property.new('fg',     sPool) # Current color attribute ('fg', 'bg', or 'sp')
-var pEdited     = react.Property.new(false,    sPool) # Was the current color attribute modified by the style picker?
+var pHiGroup  = react.Property.new('Normal', sPool)    # Current highlight group
+var pRecent   = react.Property.new([],       sPool)    # List of recent colors
+var pFavorite = react.Property.new([],       sPool)    # List of favorite colors
+var pFgBgSp   = react.Property.new('fg',     sPool)    # Current color attribute ('fg', 'bg', or 'sp')
+var pEdited   = react.Property.new(false,    sPool)    # Was the current color attribute modified by the style picker?
 
 class ColorProperty extends react.Property
   #   #
@@ -772,7 +779,7 @@ class SliderView extends SelectableView
     ])
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
+  def RespondToKeyEvent(keyCode: string): bool
     if keyCode == kIncrementKey
       this.Increment(this.step.Get())
 
@@ -785,7 +792,7 @@ class SliderView extends SelectableView
       return true
     endif
 
-    return false
+    return super.RespondToKeyEvent(keyCode)
   enddef
 
   def Increment(by: number)
@@ -1047,18 +1054,21 @@ class RgbContainerView extends ContainerView
   var colorRef: ColorProperty
 
   def new(this.colorRef, step: react.Property, visible = true)
-    this.AddView(SliderView.new('R', step))
+    var rView = SliderView.new('R', step)
+    this.AddView(rView)
     this.AddView(SliderView.new('G', step))
     this.AddView(SliderView.new('B', step))
     this.SetVisible(visible)
+
+    sFocusView = rView
 
     # Keep the color in sync with the RGB components
     react.CreateEffect(() => {
       if this.IsVisible()
         var [r, g, b] = libcolor.Hex2Rgb(this.colorRef.Get())
-        (<SliderView>this.children[0]).value.Set(r)
-        (<SliderView>this.children[1]).value.Set(g)
-        (<SliderView>this.children[2]).value.Set(b)
+        (<SliderView>this.Child(0)).value.Set(r)
+        (<SliderView>this.Child(1)).value.Set(g)
+        (<SliderView>this.Child(2)).value.Set(b)
       endif
     })
 
@@ -1066,9 +1076,9 @@ class RgbContainerView extends ContainerView
       if this.IsVisible()
         this.colorRef.Set(
           libcolor.Rgb2Hex(
-          (<SliderView>this.children[0]).value.Get(),
-          (<SliderView>this.children[1]).value.Get(),
-          (<SliderView>this.children[2]).value.Get()
+          (<SliderView>this.Child(0)).value.Get(),
+          (<SliderView>this.Child(1)).value.Get(),
+          (<SliderView>this.Child(2)).value.Get()
           )
         )
       endif
@@ -1082,17 +1092,17 @@ class HsbContainerView extends ContainerView
 
   def new(this.colorRef, step: react.Property, visible = true)
     this.AddView(SliderView.new('H', step))
-    this.AddView(SliderView.new('S', step))
-    this.AddView(SliderView.new('B', step))
+    this.AddView(SliderView.new('S', step, 100))
+    this.AddView(SliderView.new('B', step, 100))
     this.SetVisible(visible)
 
     # Keep the color in sync with the RGB components
     react.CreateEffect(() => {
       if this.IsVisible()
         var [h, s, b] = libcolor.Hex2Hsv(this.colorRef.Get())
-        (<SliderView>this.children[0]).value.Set(h)
-        (<SliderView>this.children[1]).value.Set(s)
-        (<SliderView>this.children[2]).value.Set(b)
+        (<SliderView>this.Child(0)).value.Set(h)
+        (<SliderView>this.Child(1)).value.Set(s)
+        (<SliderView>this.Child(2)).value.Set(b)
       endif
     })
 
@@ -1100,9 +1110,9 @@ class HsbContainerView extends ContainerView
       if this.IsVisible()
         this.colorRef.Set(
           libcolor.Hsv2Hex(
-          (<SliderView>this.children[0]).value.Get(),
-          (<SliderView>this.children[1]).value.Get(),
-          (<SliderView>this.children[2]).value.Get()
+          (<SliderView>this.Child(0)).value.Get(),
+          (<SliderView>this.Child(1)).value.Get(),
+          (<SliderView>this.Child(2)).value.Get()
           )
         )
       endif
@@ -1123,7 +1133,7 @@ class GrayscaleContainerView extends ContainerView
     react.CreateEffect(() => {
       if this.IsVisible()
         var gray = libcolor.Hex2Gray(this.colorRef.Get())
-        (<SliderView>this.children[1]).value.Set(gray)
+        (<SliderView>this.Child(1)).value.Set(gray)
       endif
     })
 
@@ -1132,7 +1142,7 @@ class GrayscaleContainerView extends ContainerView
     # eventually become gray).
     react.CreateEffect(() => {
       if this.IsVisible() && pEdited.Get()
-        var sliderValue: number = (<SliderView>this.children[1]).value.Get()
+        var sliderValue: number = (<SliderView>this.Child(1)).value.Get()
         this.colorRef.Set(libcolor.Gray2Hex(sliderValue))
       endif
     })
@@ -1162,7 +1172,7 @@ class ColorPaletteContainerView extends ContainerView
   def AddColorSlices_() # Dynamically add slices to accommodate all the colors
     var palette   = this.paletteRef.Get()
     var numColors = len(palette)
-    var numSlots  = (len(this.children) - 1) * this.numColorsPerLine
+    var numSlots  = (this.NumChildren() - 1) * this.numColorsPerLine
 
     while numSlots < numColors
       var new_slice = ColorSliceView.new(
@@ -1173,7 +1183,7 @@ class ColorPaletteContainerView extends ContainerView
       )
 
       this.AddView(new_slice)
-      ui.StartRendering(new_slice, this.bufnr)
+      new_slice.Render(this.bufnr)
       numSlots += this.numColorsPerLine
     endwhile
   enddef
@@ -1230,7 +1240,7 @@ class StylePickerContainerView extends ContainerView
     this._hsbSliderContainerView.SetVisible(false)
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
+  def RespondToKeyEvent(keyCode: string): bool
     if keyCode == kRgbPaneKey
       this.ShowRgb()
 
@@ -1249,7 +1259,7 @@ class StylePickerContainerView extends ContainerView
       return true
     endif
 
-    return super.RespondToEvent(lnum, keyCode)
+    return super.RespondToKeyEvent(keyCode)
   enddef
 endclass
 # }}}
@@ -1273,9 +1283,23 @@ class RootContainerView extends ContainerView
     this.AddView(this._helpView)
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
+  def RespondToKeyEvent(keyCode: string): bool
     if keyCode == kCancelKey
       ActionCancel()
+
+      return true
+    endif
+
+    if keyCode == kFgBgSpKey
+      var fgBgSp = pFgBgSp.Get()
+
+      if fgBgSp == 'fg'
+        pFgBgSp.Set('bg')
+      elseif fgBgSp == 'bg'
+        pFgBgSp.Set('sp')
+      else
+        pFgBgSp.Set('fg')
+      endif
 
       return true
     endif
@@ -1287,14 +1311,45 @@ class RootContainerView extends ContainerView
       return true
     endif
 
+    if keyCode == kDownKey
+      var nextView: View = sFocusView.Next()
+
+      while !nextView.IsSelectable()
+        var curview = nextView
+        nextView = nextView.Next()
+
+        if nextView is curview
+          return false
+        endif
+      endwhile
+
+      SelectView(<SelectableView>nextView)
+
+      return true
+    endif
+
     if keyCode == kUpKey
+      var prevView: View = sFocusView.Previous()
+
+      while !prevView.IsSelectable()
+        var curview: View = prevView
+        prevView = prevView.Previous()
+
+        if prevView is curview
+          return false
+        endif
+      endwhile
+
+      SelectView(<SelectableView>prevView)
+
+      return true
     endif
 
     if keyCode->In([kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
       this._helpView.SetVisible(false)
     endif
 
-    return this._stylePickerContainerView.RespondToEvent(lnum, keyCode)
+    return super.RespondToKeyEvent(keyCode)
   enddef
 endclass
 # }}}
@@ -1328,8 +1383,20 @@ enddef
 
 def HandleEvent(winid: number, rawKeyCode: string): bool
   var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
+  var lnum = 0
 
-  return sRootView.RespondToEvent(3, keyCode)
+  if keyCode == "\<LeftMouse>"
+    var mousepos = getmousepos()
+
+    if mousepos.winid != sWinID
+      return false
+    endif
+
+    return sRootView.RespondToMouseEvent(mousepos.line, mousepos.column, keyCode)
+  endif
+
+  # Handle key press
+  return sFocusView.RespondToKeyEvent(keyCode)
 enddef
 # }}}
 
@@ -1387,7 +1454,7 @@ def StylePickerPopup(
 
   sRootView = RootContainerView.new(bufnr, pColor, pRecent, pFavorite)
 
-  ui.StartRendering(sRootView, bufnr)
+  sRootView.Render(bufnr)
 
   if empty(hiGroup)
     TrackCursorAutoCmd()

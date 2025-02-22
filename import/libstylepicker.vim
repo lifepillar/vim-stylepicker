@@ -153,7 +153,15 @@ export class View
     return false
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
+  def RespondToKeyEvent(keyCode: string): bool
+    if this.parent is this
+      return false
+    endif
+
+    return this.parent.RespondToKeyEvent(keyCode)
+  enddef
+
+  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
     return false
   enddef
 
@@ -385,7 +393,7 @@ export class ContainerView extends View
     this.ApplyToChildren((child: View) => child.Render(bufnr))
   enddef
 
-  def RespondToEvent(lnum: number, keyCode: string): bool
+  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
     if this.IsEmpty()
       return false
     endif
@@ -400,7 +408,7 @@ export class ContainerView extends View
       var height = child.Height()
 
       if lnum_ <= height # Forward the event to the child
-        handled = child.RespondToEvent(lnum_, keyCode)
+        handled = child.RespondToMouseEvent(lnum_, col, keyCode)
         break
       endif
 
