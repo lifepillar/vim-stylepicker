@@ -1061,6 +1061,7 @@ class RgbContainerView extends ContainerView
     this.SetVisible(visible)
 
     sFocusView = rView
+    sFocusView.SetSelected(true)
 
     # Keep the color in sync with the RGB components
     react.CreateEffect(() => {
@@ -1395,7 +1396,6 @@ def HandleEvent(winid: number, rawKeyCode: string): bool
     return sRootView.RespondToMouseEvent(mousepos.line, mousepos.column, keyCode)
   endif
 
-  # Handle key press
   return sFocusView.RespondToKeyEvent(keyCode)
 enddef
 # }}}

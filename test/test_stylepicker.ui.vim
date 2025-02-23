@@ -320,13 +320,13 @@ def Test_StylePicker_RenderLeafInsideContainer()
   root.AddView(leaf)
 
   assert_true(root.llink is leaf, 'llink(root) is leaf')
+  assert_true(root.rlink is root, 'rlink(root) is root')
   assert_true(root.ltag)
-  assert_true(root.Next() is root, 'next(root) is leaf')
   assert_false(root.rtag)
+  assert_true(root.Next() is leaf, 'next(root) is leaf')
+  assert_true(root.Previous() is leaf, 'prev(root) is leaf')
   assert_true(leaf.Previous() is root, 'prev(leaf) is root')
   assert_true(leaf.Next() is root, 'next(leaf) is root')
-  assert_true(root.Previous() is leaf, 'prev(root) is leaf')
-  assert_true(root.Next() is root, 'next(root) is root')
 
   var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
@@ -342,21 +342,19 @@ enddef
 
 
 def Test_StylePicker_RenderHierarchy()
-#                       ......
-#                       ▼    .
-#                    ┌─────┐..
-#  ..........▶ ┌─────│root │ ◀.........
-#  .           │     └─────┘          .
-#  .        ┌──▼──┐           ┌─────┐..
-#  .    ┌───│box1 │──────────►│box2 │
-#  .    │   └─────┘ ◀........ └──┬──┘◀.
-#  .    │      ▲            .    │    .
-#  .    ▼      ......       .    ▼    .
-#  . ┌─────┐       ┌─────┐  . ┌─────┐ .
-#  ..│leaf1│──────►│leaf2│  ..│leaf3│..
-#    └─────┘       └─────┘    └─────┘
-#       ▲             .
-#       ...............
+#                    ┌─────┐..............
+#  ..........▶ ┌─────│root │ ◀.........  .
+#  .           │     └─────┘          .  .
+#  .        ┌──▼──┐           ┌─────┐..  .
+#  .    ┌───│box1 │──────────►│box2 │    .
+#  .    │   └─────┘ ◀........ └──┬──┘◀.  .
+#  .    │      ▲            .    │    .  .
+#  .    ▼      ......       .    ▼    .  .
+#  . ┌─────┐       ┌─────┐  . ┌─────┐ .  .
+#  ..│leaf1│──────►│leaf2│  ..│leaf3│..  .
+#    └─────┘       └─────┘    └─────┘    .
+#       ▲             .                  .
+#       ..................................
 
   var leaf1 = TestLeafView.new(['A'])
   var leaf2 = TestLeafView.new(['B', 'C'])
@@ -376,7 +374,7 @@ def Test_StylePicker_RenderHierarchy()
   assert_true(root.rlink is root, 'rlink(root) is root')
   assert_true(root.ltag)
   assert_false(root.rtag)
-  assert_true(root.Next() is root, 'next(root) is root')
+  assert_true(root.Next() is leaf1, 'next(root) is leaf1')
   assert_true(root.Previous() is box2, 'prev(root) is box2')
   assert_equal(2, root.NumChildren())
   assert_true(root.Child(0) is box1, 'child(0) is box1')

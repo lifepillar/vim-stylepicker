@@ -109,7 +109,19 @@ export class View
     return 0
   enddef
 
+  def IsRoot(): bool
+    return this.parent is this
+  enddef
+
+  def IsLeaf(): bool
+    return !this.ltag
+  enddef
+
   def Next(): View
+    if this.rlink is this
+      return this.FirstLeafView()
+    endif
+
     var nextView = this.rlink
 
     if !this.rtag
@@ -154,7 +166,7 @@ export class View
   enddef
 
   def RespondToKeyEvent(keyCode: string): bool
-    if this.parent is this
+    if this.IsRoot()
       return false
     endif
 
@@ -279,10 +291,6 @@ export class ContainerView extends View
     return $'[Subview of {this.parent.string()}]'
   enddef
 
-  def IsEmpty(): bool
-    return !this.ltag
-  enddef
-
   def Child(index: number): View
     var i = 0
     var child = this.llink
@@ -296,7 +304,7 @@ export class ContainerView extends View
   enddef
 
   def NumChildren(): number
-    if this.IsEmpty()
+    if this.IsLeaf()
       return 0
     endif
 
@@ -312,7 +320,7 @@ export class ContainerView extends View
   enddef
 
   def ApplyToChildren(F: func(View))
-    if this.IsEmpty()
+    if this.IsLeaf()
       return
     endif
 
@@ -367,7 +375,7 @@ export class ContainerView extends View
     view.parent = this
 
     # Adapted from TAOCP, §2.3.1 (Traversing Binary Trees), Algorithm I
-    if this.IsEmpty() # Add view as the left subtree of this
+    if this.IsLeaf() # Add view as the left subtree of this
       var leaf = view.FirstLeafView()
 
       leaf.llink = this.llink
@@ -394,7 +402,7 @@ export class ContainerView extends View
   enddef
 
   def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
-    if this.IsEmpty()
+    if this.IsLeaf()
       return false
     endif
 
