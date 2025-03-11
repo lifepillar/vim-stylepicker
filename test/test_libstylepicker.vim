@@ -6,45 +6,19 @@ import 'libstylepicker.vim' as ui
 
 type TextProperty  = ui.TextProperty
 type TextLine      = ui.TextLine
-type LeafView      = ui.LeafView
+type ContentView   = ui.ContentView
 type UpdatableView = ui.UpdatableView
-type ContainerView = ui.ContainerView
+type VStack        = ui.VStack
 
 
 def Text(body: list<TextLine>): list<string>
   return mapnew(body, (_, line: TextLine): string => line.text)
 enddef
 
-class TestLeafView extends LeafView
+class TestContentView extends ContentView
   def new(content: list<string>)
     var value = mapnew(content, (_, t): TextLine =>  TextLine.new(t))
-    this._content.Set(value)
-  enddef
-
-  def RespondToKeyEvent(keyCode: string): bool
-    if keyCode == 'K'
-      return true
-    endif
-
-    return super.RespondToKeyEvent(keyCode)
-  enddef
-
-  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
-    if lnum == 3 || col == 11
-      return true
-    endif
-
-    return super.RespondToMouseEvent(lnum, col, keyCode)
-  enddef
-endclass
-
-class TestContainerView extends ContainerView
-  def RespondToKeyEvent(keyCode: string): bool
-    if keyCode == 'C'
-      return true
-    endif
-
-    return super.RespondToKeyEvent(keyCode)
+    this.content.Set(value)
   enddef
 endclass
 
@@ -56,9 +30,10 @@ class TestUpdatableView extends UpdatableView
   enddef
 
   def Update()
-    this._content.Set([TextLine.new(this.state.Get())])
+    this.content.Set([TextLine.new(this.state.Get())])
   enddef
 endclass
+
 
 def Test_StylePicker_TextLineFormat()
   var l0 = TextLine.new('hello')
@@ -92,30 +67,41 @@ def Test_StylePicker_UnicodeTextLine()
   assert_equal(expected, l0.Format())
 enddef
 
-def Test_StylePicker_LeafView()
-  var leafView = TestLeafView.new(['hello', 'world'])
+def Test_StylePicker_CreateContentView()
+  var view     = TestContentView.new(['hello', 'world'])
   var expected = [TextLine.new('hello'), TextLine.new('world')]
 
-  assert_equal(expected, leafView.Body())
+  assert_equal(expected, view.Body())
+  assert_equal(2, view.Height())
 
-  leafView.SetVisible(false)
+  view.Hidden(true)
 
-  assert_equal([], leafView.Body())
+  assert_equal([], view.Body())
+  assert_equal(0,  view.Height())
 
-  leafView.SetVisible(true)
+  view.Hidden(false)
 
-  assert_equal(expected, leafView.Body())
+  assert_equal(expected, view.Body())
+  assert_equal(2,        view.Height())
 enddef
 
-def Test_StylePicker_RenderView()
+def Test_StylePicker_RenderContentView()
   var content = ['a', 'b', 'c']
-  var view = TestLeafView.new(content)
+  var view    = TestContentView.new(content)
+  var bufnr   = bufadd('StylePicker test buffer')
 
-  var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
 
   try
     view.Render(bufnr)
+
+    assert_equal(content, getbufline(bufnr, 1, '$'))
+
+    view.Hidden(true)
+
+    assert_equal([''], getbufline(bufnr, 1, '$'))
+
+    view.Hidden(false)
 
     assert_equal(content, getbufline(bufnr, 1, '$'))
   finally
@@ -123,79 +109,77 @@ def Test_StylePicker_RenderView()
   endtry
 enddef
 
-def Test_StylePicker_ContainerView()
-  var outer = ContainerView.new()
-  var inner = ContainerView.new()
-  var view = TestLeafView.new(['x', 'y'])
-  var p1 = react.Property.new('text')
+def Test_StylePicker_VStack()
+  var p1            = react.Property.new('text')
+  var contentView   = TestContentView.new(['x', 'y'])
   var updatableView = TestUpdatableView.new(p1)
+  var inner         = VStack.new([contentView])
+  var outer         = VStack.new([inner, updatableView])
+  var bufnr         = bufadd('StylePicker test buffer')
 
-  assert_equal([], inner.Body())
-
-  inner.AddView(view)
-
-  assert_equal(['x', 'y'], Text(view.Body()))
-  assert_equal(['x', 'y'], Text(inner.Body()))
-
-  outer.AddView(inner)
-
-  assert_equal(['x', 'y'], Text(outer.Body()))
-
-  var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
 
   try
     outer.Render(bufnr)
 
-    # :-- outer ------------------:
-    # | :-- inner --------------: |
-    # | |         view          | |
+    # :-- outer vstack -----------:
+    # | :-- inner vstack -------: |
+    # | | :-- content view ---: | |
+    # | | |        x          | | |
+    # | | |        y          | | |
+    # | | :-------------------: | |
     # | :-----------------------: |
-    # |       updatableView       |
+    # |   :-- updatable view -:   |
+    # |   |       text        |   |
+    # |   :-------------------:   |
     # :---------------------------:
 
-    assert_equal(['x', 'y'], getbufline(bufnr, 1, '$'))
-
-    outer.AddView(updatableView)
 
     assert_equal(['x', 'y', 'text'], Text(outer.Body()))
+    assert_equal(['x', 'y', 'text'], getbufline(bufnr, 1, '$'))
 
     updatableView.state.Set('new text')
 
     assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+    assert_equal(['x', 'y', 'new text'], getbufline(bufnr, 1, '$'))
 
-    # Hiding views
-    view.SetVisible(false)
+    contentView.Hidden(true)
+
     assert_equal(['new text'], Text(outer.Body()))
+    assert_equal(['new text'], getbufline(bufnr, 1, '$'))
 
-    view.SetVisible(true)
+    contentView.Hidden(false)
+
     assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+    assert_equal(['x', 'y', 'new text'], getbufline(bufnr, 1, '$'))
 
-    inner.SetVisible(false)
+    inner.Hidden(true)
     assert_equal(['new text'], Text(outer.Body()))
+    assert_equal(['new text'], getbufline(bufnr, 1, '$'))
 
-    outer.SetVisible(false)
+    outer.Hidden(true)
     assert_equal([], Text(outer.Body()))
+    assert_equal([''], getbufline(bufnr, 1, '$'))
 
-    inner.SetVisible(true)
+    inner.Hidden(false)
     assert_equal(['x', 'y'], Text(outer.Body()))
+    assert_equal(['x', 'y'], getbufline(bufnr, 1, '$'))
 
-    inner.SetVisible(false)
-    outer.SetVisible(true)
+    inner.Hidden(true)
+    outer.Hidden(false)
     assert_equal(['x', 'y', 'new text'], Text(outer.Body()))
+    assert_equal(['x', 'y', 'new text'], getbufline(bufnr, 1, '$'))
   finally
     execute 'bwipe!' bufnr
   endtry
 enddef
 
 def Test_StylePicker_UpdatableView()
-  var p1 = react.Property.new('initial text')
+  var p1            = react.Property.new('initial text')
   var updatableView = TestUpdatableView.new(p1)
-  var containerView = ContainerView.new()
+  var containerView = VStack.new([updatableView])
+  var bufnr         = bufadd('StylePicker test buffer')
 
-  containerView.AddView(updatableView)
-
-  var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
 
   try
@@ -212,24 +196,18 @@ def Test_StylePicker_UpdatableView()
 enddef
 
 def Test_StylePicker_ViewFollowedByContainer()
-  var header        = TestLeafView.new(['Header'])
-  var r             = TestLeafView.new(['r'])
-  var g             = TestLeafView.new(['g'])
-  var b             = TestLeafView.new(['b'])
-  var rgb           = ContainerView.new()
-  var containerView = ContainerView.new()
+  var header        = TestContentView.new(['Header'])
+  var r             = TestContentView.new(['r'])
+  var g             = TestContentView.new(['g'])
+  var b             = TestContentView.new(['b'])
+  var rgb           = VStack.new([r, g, b])
+  var root          = VStack.new([header, rgb])
+  var bufnr         = bufadd('StylePicker test buffer')
 
-  rgb.AddView(r)
-  rgb.AddView(g)
-  rgb.AddView(b)
-  containerView.AddView(header)
-  containerView.AddView(rgb)
-
-  var bufnr = bufadd('StylePicker test buffer')
   bufload(bufnr)
 
   try
-    containerView.Render(bufnr)
+    root.Render(bufnr)
 
     assert_equal(['Header', 'r', 'g', 'b'], getbufline(bufnr, 1, '$'))
   finally
@@ -238,36 +216,43 @@ def Test_StylePicker_ViewFollowedByContainer()
 enddef
 
 def Test_StylePicker_RespondToKeyEvent()
-  var v1 = TestLeafView.new(['a', 'b', 'c'])
-  var c1 = TestContainerView.new()
-  var root = ContainerView.new()
-
-  c1.AddView(v1)
-  root.AddView(c1)
-
-  # Until the views are rendered, their height is not set
-  assert_equal(0, v1.Height())
-
+  var v1    = TestContentView.new(['a', 'b', 'c'])
+  var c1    = VStack.new([v1])
+  var root  = VStack.new([c1])
   var bufnr = bufadd('StylePicker test buffer')
+
+  v1.OnKeyCode('K', () => true)
+  c1.OnKeyCode('C', () => true)
+
+  assert_equal(3, v1.Height())
+  assert_equal(3, c1.Height())
+  assert_equal(3, root.Height())
+  assert_equal(0, root.Offset())
+  assert_equal(0, c1.Offset())
+  assert_equal(0, v1.Offset())
+
   bufload(bufnr)
 
   try
     root.Render(bufnr)
 
     assert_equal(3, v1.Height())
+    assert_equal(['a', 'b', 'c'], getbufline(bufnr, 1, '$'))
     assert_true(v1.RespondToKeyEvent('K'))
     assert_true(v1.RespondToKeyEvent('C'))
+    assert_true(c1.RespondToKeyEvent('C'))
     assert_false(v1.RespondToKeyEvent('X'))
+    assert_false(c1.RespondToKeyEvent('K'))
+    assert_false(root.RespondToKeyEvent('K'))
+    assert_false(root.RespondToKeyEvent('C'))
   finally
     execute 'bwipe!' bufnr
   endtry
 enddef
 
 def Test_StylePicker_AddViewToContainer()
-  var c1 = ContainerView.new()
-  var v1 = TestLeafView.new(['a', 'b', 'c'])
-
-  c1.AddView(v1)
+  var v1 = TestContentView.new(['a', 'b', 'c'])
+  var c1 = VStack.new([v1])
 
   assert_true(c1.llink is v1, '1')
   assert_true(c1.ltag, '2')
@@ -290,7 +275,7 @@ def Test_StylePicker_AddViewToContainer()
 enddef
 
 def Test_StylePicker_RenderLeaf()
-  var leafView = TestLeafView.new(['Hello', 'world'])
+  var leafView = TestContentView.new(['Hello', 'world'])
 
   assert_true(leafView.llink is leafView)
   assert_false(leafView.ltag)
@@ -312,10 +297,8 @@ def Test_StylePicker_RenderLeaf()
 enddef
 
 def Test_StylePicker_RenderLeafInsideContainer()
-  var leaf = TestLeafView.new(['hello', 'world'])
-  var root = ContainerView.new()
-
-  root.AddView(leaf)
+  var leaf = TestContentView.new(['hello', 'world'])
+  var root = VStack.new([leaf])
 
   assert_true(root.llink is leaf, 'llink(root) is leaf')
   assert_true(root.rlink is root, 'rlink(root) is root')
@@ -338,7 +321,6 @@ def Test_StylePicker_RenderLeafInsideContainer()
   endtry
 enddef
 
-
 def Test_StylePicker_RenderHierarchy()
 #                    ┌─────┐..............
 #  ..........▶ ┌─────│root │ ◀.........  .
@@ -354,12 +336,12 @@ def Test_StylePicker_RenderHierarchy()
 #       ▲             .                  .
 #       ..................................
 
-  var leaf1 = TestLeafView.new(['A'])
-  var leaf2 = TestLeafView.new(['B', 'C'])
-  var leaf3 = TestLeafView.new(['D', 'E'])
-  var box1  = ContainerView.new()
-  var box2  = ContainerView.new()
-  var root  = ContainerView.new()
+  var leaf1 = TestContentView.new(['A'])
+  var leaf2 = TestContentView.new(['B', 'C'])
+  var leaf3 = TestContentView.new(['D', 'E'])
+  var box1  = VStack.new()
+  var box2  = VStack.new()
+  var root  = VStack.new()
 
   box1.AddView(leaf1)
   root.AddView(box1)
@@ -367,7 +349,7 @@ def Test_StylePicker_RenderHierarchy()
   box2.AddView(leaf3)
   root.AddView(box2)
 
-  assert_true(box1.FirstLeafView() is leaf1, 'firstSubview(box1) is leaf1')
+  assert_true(box1.FirstLeaf() is leaf1, 'firstSubview(box1) is leaf1')
   assert_true(root.llink is box1, 'llink(root) is box1')
   assert_true(root.rlink is root, 'rlink(root) is root')
   assert_true(root.ltag)
@@ -429,5 +411,6 @@ def Test_StylePicker_RenderHierarchy()
     execute 'bwipe!' bufnr
   endtry
 enddef
+
 
 tt.Run('_StylePicker_')

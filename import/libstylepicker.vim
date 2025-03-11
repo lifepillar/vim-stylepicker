@@ -7,6 +7,8 @@ vim9script
 
 import 'libreactive.vim' as react
 
+export type Action = func(): bool
+
 export class TextProperty
   #   #
   #  # A simple abstraction on a Vim text property, working with characters
@@ -90,23 +92,34 @@ export class View
   #  # Base class for all views and containers.
   # # The view hierarchy is grounded on the *natural correspondence* between
   ## forests and binary trees. See TAOCP, §2.3.2.
-  var  parent:    View           = this
-  var  llink:     View           = this # Left subtree
-  var  rlink:     View           = this # Right subtree
-  var  ltag:      bool           = false # false=thread, true=link to first child
-  var  rtag:      bool           = false # false=thread, true=link to right sibling
-  var _visible:   react.Property = react.Property.new(true)
+  var  parent:     View = this  # Container view
+  var  llink:      View = this  # Left subtree
+  var  rlink:      View = this  # Right subtree
+  var  ltag:       bool = false # false=thread, true=link to first child
+  var  rtag:       bool = false # false=thread, true=link to right sibling
+  var  focusable:  bool = false
+
+  var _hidden:    react.Property = react.Property.new(false)
+  var _action:    dict<Action>   = {}
 
   def string(): string
-    return '[Base view]'
+    return '[View]'
   enddef
 
   def Body(): list<TextLine>
     return []
   enddef
 
+  def IsHidden(): bool
+    return this._hidden.Get()
+  enddef
+
+  def Hidden(isHidden: bool)
+    this._hidden.Set(isHidden)
+  enddef
+
   def Height(): number
-    return 0
+    return len(this.Body())
   enddef
 
   def IsRoot(): bool
@@ -119,7 +132,7 @@ export class View
 
   def Next(): View
     if this.rlink is this
-      return this.FirstLeafView()
+      return this.FirstLeaf()
     endif
 
     var nextView = this.rlink
@@ -149,23 +162,20 @@ export class View
     return prevView
   enddef
 
-  def FirstLeafView(): View
+  def FirstLeaf(): View
     return this
   enddef
 
-  def SetVisible(state: bool)
-    this._visible.Set(state)
-  enddef
-
-  def IsVisible(): bool
-    return this._visible.Get()
-  enddef
-
-  def IsSelectable(): bool
-    return false
+  def OnKeyCode(keyCode: string, F: Action): View
+    this._action[keyCode] = F
+    return this
   enddef
 
   def RespondToKeyEvent(keyCode: string): bool
+    if this._action->has_key(keyCode) && this._action[keyCode]()
+      return true
+    endif
+
     if this.IsRoot()
       return false
     endif
@@ -173,118 +183,142 @@ export class View
     return this.parent.RespondToKeyEvent(keyCode)
   enddef
 
-  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
+  def RespondToMouseEvent(keyCode: string, lnum: number, col: number): bool
+    if this._action->has_key(keyCode) && this._action[keyCode]()
+      return true
+    endif
+
+    if this.IsLeaf()
+      return false
+    endif
+
+    # Find the child containing lnum
+    var lnum_ = lnum
+    var child = this.llink
+
+    while true
+      var height = child.Height()
+
+      if lnum_ <= height # Forward the event to the child
+        return child.RespondToMouseEvent(keyCode, lnum_, col)
+      endif
+
+      if !child.rtag
+        break
+      endif
+
+      lnum_ -= height
+      child = child.rlink
+    endwhile
+
     return false
   enddef
 
+  def Offset(): number
+    #   #
+    #  # Return the offset of this view with respect to the root container.
+    # #
+    ##
+    if this.IsRoot()
+      return 0
+    endif
+
+    var offset = this.parent.Offset()
+    var node = this.parent.llink
+
+    while node isnot this
+      offset += node.Height()
+      node = node.rlink
+    endwhile
+
+    return offset
+  enddef
+
+  def Paint(bufnr: number)
+  enddef
+
+  def Unpaint(bufnr: number)
+  enddef
+
   def Render(bufnr: number)
+    react.CreateEffect(() => {
+      if this.IsHidden()
+        this.Unpaint(bufnr)
+      else
+        this.Paint(bufnr)
+      endif
+    })
   enddef
 endclass
 
-def LineNumber(view: View): number
-  #   # Return the line number where `view` should be drawn.
-  #  # Note that this function must be pure: to avoid side effects, it should
-  # # not (directly or indirectly) access any property.
-  ##
-  if view.parent is view
-    return 1
-  endif
-
-  var lnum = LineNumber(view.parent)
-  var node = view.parent.llink
-
-  while node isnot view
-    lnum += node.Height()
-    node = node.rlink
-  endwhile
-
-  return lnum
-enddef
-
-export class LeafView extends View
+export class ContentView extends View
   #   #
-  #  # A leaf view has actual content that can be drawn in a buffer.
+  #  # A leaf view that has actual content that can be drawn in a buffer.
   # #
   ##
-  var _collapsed  = react.Property.new(false)
-  var _content    = react.Property.new([])
+  var  content    = react.Property.new([])
   var _old_height = 0 # Height of the view last time it was rendered
-  var _height     = 0 # Current height of the view
 
   def string(): string
-    return join(mapnew(this._content.Get(), (_, line: TextLine) => line.text))
+    return join(mapnew(this.Body(), (_, line: TextLine) => line.text))
   enddef
 
   def Body(): list<TextLine>
-    if this._collapsed.Get()
+    if this._hidden.Get()
       return []
     endif
 
-    return this._content.Get()
+    return this.content.Get()
   enddef
 
-  def Height(): number
-    #   # Return the height of this view.
-    #  #
-    # # NOTE: returns the correct height only after the view has been
-    ## rendered at least once and only if the view is visible.
-    return this._height
+  def Unpaint(bufnr: number)
+    var lnum = 1 + this.Offset()
+    deletebufline(bufnr, lnum, lnum + this._old_height - 1)
+    this._old_height = 0
   enddef
 
-  def SetVisible(state: bool)
-    this._collapsed.Set(!state) # Remove the view from the buffer
-    this._visible.Set(state) # Stop observing this.Body()'s properties
-  enddef
-
-  def Render(bufnr: number)
-    react.CreateEffect(() => this.Render_(bufnr))
-  enddef
-
-  def Render_(bufnr: number)
-    #   # Render a view in a buffer. This method may be called inside
-    #  # an effect to automatically re-render a view.
-    # # Accesses two properties: this._visible and this._collapsed (the latter
-    ##  indirectly via this.Body()).
-    if !this._visible.Get()
-      return
-    endif
-
-    var lnum       = LineNumber(this)
+  def Paint(bufnr: number)
     var body       = this.Body()
+    var height     = this.Height()
+    var lnum       = 1 + this.Offset()
     var old_height = this._old_height
 
-    this._height = len(this.Body())
-
-    if this._height == old_height # Fast path
+    if height == old_height # Fast path
       DrawLines(bufnr, lnum, body)
       return
     endif
 
     # Adjust the vertical space to the new size of the view
-    if this._height > old_height
+    if height > old_height
       var linecount  = getbufinfo(bufnr)[0].linecount
       var is_empty = linecount == 1 && empty(getbufoneline(bufnr, 1))
 
       if !is_empty
-        appendbufline(bufnr, lnum, repeat([''], this._height - old_height))
+        appendbufline(bufnr, lnum, repeat([''], height - old_height))
       endif
     else
-      deletebufline(bufnr, lnum + this._height, lnum + old_height - 1)
+      deletebufline(bufnr, lnum + height, lnum + old_height - 1)
     endif
 
-    this._old_height = this._height
+    this._old_height = height
 
     DrawLines(bufnr, lnum, body)
   enddef
 endclass
 
-export class ContainerView extends View
+export class VStack extends View
   #   #
-  #  # A container for views and other containers.
+  #  # A container to vertically stack other views.
   # #
   ##
+  def new(views: list<View> = [])
+    for view in views
+      this.AddView(view)
+    endfor
+  enddef
+
   def string(): string
-    if this.parent is this
+    if this.IsRoot()
       return '[Root view]'
     endif
 
@@ -326,11 +360,14 @@ export class ContainerView extends View
 
     var node = this.llink
 
-    F(node)
-
-    while node.rtag
-      node = node.rlink
+    while true
       F(node)
+
+      if !node.rtag
+        break
+      endif
+
+      node = node.rlink
     endwhile
   enddef
 
@@ -354,14 +391,14 @@ export class ContainerView extends View
     return height
   enddef
 
-  def SetVisible(state: bool)
+  def Hidden(isHidden: bool)
     this.ApplyToChildren((child: View) => {
-      child.SetVisible(state)
+      child.Hidden(isHidden)
     })
-    this._visible.Set(state)
+    this._hidden.Set(isHidden)
   enddef
 
-  def FirstLeafView(): View
+  def FirstLeaf(): View
     var node: View = this
 
     while node.ltag
@@ -376,7 +413,7 @@ export class ContainerView extends View
 
     # Adapted from TAOCP, §2.3.1 (Traversing Binary Trees), Algorithm I
     if this.IsLeaf() # Add view as the left subtree of this
-      var leaf = view.FirstLeafView()
+      var leaf = view.FirstLeaf()
 
       leaf.llink = this.llink
       leaf.ltag  = this.ltag
@@ -386,7 +423,7 @@ export class ContainerView extends View
       view.rtag  = false
     else # Add view as the right subtree of the rightmost child of this
       var node = this.Previous() # Rightmost child of this
-      var leaf = view.FirstLeafView()
+      var leaf = view.FirstLeaf()
 
       view.rlink = node.rlink
       view.rtag  = node.rtag
@@ -400,39 +437,9 @@ export class ContainerView extends View
   def Render(bufnr: number)
     this.ApplyToChildren((child: View) => child.Render(bufnr))
   enddef
-
-  def RespondToMouseEvent(lnum: number, col: number, keyCode: string): bool
-    if this.IsLeaf()
-      return false
-    endif
-
-    var lnum_   = lnum
-    var handled = false
-
-    # Find the child containing lnum
-    var child = this.llink
-
-    while true
-      var height = child.Height()
-
-      if lnum_ <= height # Forward the event to the child
-        handled = child.RespondToMouseEvent(lnum_, col, keyCode)
-        break
-      endif
-
-      if !child.rtag
-        break
-      endif
-
-      lnum_ -= height
-      child = child.rlink
-    endwhile
-
-    return handled
-  enddef
 endclass
 
-export class UpdatableView extends LeafView
+export class UpdatableView extends ContentView
   #   # A leaf view which is automatically updated when its observed state
   #  # changes. Subclasses should call super.Init() in new() and override
   # # Update().
@@ -445,22 +452,3 @@ export class UpdatableView extends LeafView
   enddef
 endclass
 
-export class SelectableView extends UpdatableView
-  #   #
-  #  # An updatable view that can be selected to modify its observed state.
-  # # Subclasses should call super.Init() in new() and override Update().
-  ##
-  var _selected = react.Property.new(false)
-
-  def SetSelected(state: bool)
-    this._selected.Set(state)
-  enddef
-
-  def IsSelected(): bool
-    return this._selected.Get()
-  enddef
-
-  def IsSelectable(): bool
-    return true
-  enddef
-endclass
