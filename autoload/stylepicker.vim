@@ -969,183 +969,163 @@ endclass
 # }}}
 # SliderGroupView {{{
 class SliderGroupView extends VStack
-  var  name:    string
-  var _default: number = 0
+  var name:          string
+  var defaultSlider: number
 
   # Shared reactive properties
-  var _color:     react.Property = pColor
-  var _focusView: react.Property = pFocusView
-  var _mode:      react.Property = pMode
+  var color:     react.Property = pColor
+  var focusView: react.Property = pFocusView
+  var mode:      react.Property = pMode
+  var edited:    react.Property = pEdited
 
-  def new(this.name, sliders: list<SliderView>, this._default = v:none)
+  public static var e0 = 0
+
+  def Init(name: string, sliders: list<SliderView>, defaultSlider = 0)
+    this.name = name
+    this.defaultSlider = defaultSlider
+
     for slider in sliders
       this.AddView(slider)
     endfor
 
     react.CreateEffect(() => {
-      var show = (this._mode.Get() == this.name)
+      SliderGroupView.e0 += 1
+      var show = (this.mode.Get() == this.name)
 
       this.Hidden(!show)
 
       if show
-        this._focusView.Set(this.Child(this._default))
+        this.focusView.Set(this.Child(this.defaultSlider))
+        this.edited.Set(false)
       endif
     })
   enddef
 endclass
 # }}}
 # RgbView {{{
-class RgbView extends VStack
-  var redSlider:   SliderView = SliderView.new('R')
-  var greenSlider: SliderView = SliderView.new('G')
-  var blueSlider:  SliderView = SliderView.new('B')
-
-  # Shared reactive properties
-  var _color:     react.Property = pColor
-  var _focusView: react.Property = pFocusView
-  var _mode:      react.Property = pMode
-  var _edited:    react.Property = pEdited
+class RgbView extends SliderGroupView
+  public static var e1 = 0
+  public static var e2 = 0
 
   def new()
-    this.AddView(this.redSlider)
-    this.AddView(this.greenSlider)
-    this.AddView(this.blueSlider)
+    super.Init('rgb', [
+      SliderView.new('R'),
+      SliderView.new('G'),
+      SliderView.new('B'),
+    ])
 
     react.CreateEffect(() => {
-      var show = (this._mode.Get() == 'rgb')
-
-      this.Hidden(!show)
-
-      if show
-        this._focusView.Set(this.redSlider)
-        this._edited.Set(false)
-      endif
-    })
-
-    # Keep the color in sync with the RGB components
-    react.CreateEffect(() => {
+      RgbView.e1 += 1
       if !this.IsHidden()
-        var [r, g, b] = libcolor.Hex2Rgb(this._color.Get())
-        this.redSlider.value.Set(r)
-        this.greenSlider.value.Set(g)
-        this.blueSlider.value.Set(b)
+        var [r, g, b] = libcolor.Hex2Rgb(this.color.Get())
+        this.Red().Set(r)
+        this.Green().Set(g)
+        this.Blue().Set(b)
       endif
     })
 
     react.CreateEffect(() => {
-      if this._edited.Get() && !this.IsHidden()
-        this._color.Set(
+      RgbView.e2 += 1
+      if this.edited.Get() && !this.IsHidden()
+        this.color.Set(
           libcolor.Rgb2Hex(
-          this.redSlider.value.Get(),
-          this.greenSlider.value.Get(),
-          this.blueSlider.value.Get()
+          this.Red().Get(),
+          this.Green().Get(),
+          this.Blue().Get()
           )
         )
       endif
     })
   enddef
+
+  def Red(): react.Property
+    return (<SliderView>this.Child(0)).value
+  enddef
+
+  def Green(): react.Property
+    return (<SliderView>this.Child(1)).value
+  enddef
+
+  def Blue(): react.Property
+    return (<SliderView>this.Child(2)).value
+  enddef
 endclass
 # }}}
 # HsbView {{{
-class HsbView extends VStack
-  var hueSlider:        SliderView = SliderView.new('H', 359)
-  var saturationSlider: SliderView = SliderView.new('S', 100)
-  var brightnessSlider: SliderView = SliderView.new('B', 100)
-  var _rgbValue:        string     = ""
-
-  # Shared reactive properties
-  var _color:     react.Property = pColor
-  var _focusView: react.Property = pFocusView
-  var _mode:      react.Property = pMode
-  var _edited:    react.Property = pEdited
+class HsbView extends SliderGroupView
+  var _rgbValue = ""
 
   def new()
-    this.AddView(this.hueSlider)
-    this.AddView(this.saturationSlider)
-    this.AddView(this.brightnessSlider)
-
-    react.CreateEffect(() => {
-      var show = (this._mode.Get() == 'hsb')
-
-      # TODO: use transaction?
-      this.Hidden(!show)
-
-      if show
-        this._focusView.Set(this.hueSlider)
-        this._edited.Set(false)
-      endif
-    })
+    super.Init('hsb', [
+      SliderView.new('H', 359),
+      SliderView.new('S', 100),
+      SliderView.new('B', 100),
+    ])
 
     react.CreateEffect(() => {
       if !this.IsHidden()
-        var currentColor = this._color.Get()
+        var currentColor = this.color.Get()
 
         if currentColor != this._rgbValue
           var [h, s, b] = libcolor.Hex2Hsv(currentColor)
 
           this._rgbValue = currentColor
-          this.hueSlider.value.Set(h)
-          this.saturationSlider.value.Set(s)
-          this.brightnessSlider.value.Set(b)
+          this.Hue().Set(h)
+          this.Saturation().Set(s)
+          this.Brightness().Set(b)
         endif
       endif
     })
 
     react.CreateEffect(() => {
-      if this._edited.Get() && !this.IsHidden()
+      if this.edited.Get() && !this.IsHidden()
         this._rgbValue = libcolor.Hsv2Hex(
-          this.hueSlider.value.Get(),
-          this.saturationSlider.value.Get(),
-          this.brightnessSlider.value.Get()
+          this.Hue().Get(),
+          this.Saturation().Get(),
+          this.Brightness().Get()
         )
-        this._color.Set(this._rgbValue)
+        this.color.Set(this._rgbValue)
       endif
     })
+  enddef
+
+  def Hue(): react.Property
+    return (<SliderView>this.Child(0)).value
+  enddef
+
+  def Saturation(): react.Property
+    return (<SliderView>this.Child(1)).value
+  enddef
+
+  def Brightness(): react.Property
+    return (<SliderView>this.Child(2)).value
   enddef
 endclass
 # }}}
 # GrayscaleView {{{
-class GrayscaleView extends VStack
-  var graySlider: SliderView = SliderView.new('G')
-
-  # Shared reactive properties
-  var _color:     react.Property = pColor
-  var _focusView: react.Property = pFocusView
-  var _mode:      react.Property = pMode
-  var _edited:    react.Property = pEdited
-
+class GrayscaleView extends SliderGroupView
   def new()
-    this.AddView(GrayscaleSectionView.new())
-    this.AddView(this.graySlider)
+    super.Init('gray', [
+      GrayscaleSectionView.new(),
+      SliderView.new('G'),
+    ], 1)
 
-    react.CreateEffect(() => {
-      var show = (this._mode.Get() == 'gray')
-
-      this.Hidden(!show)
-
-      if show
-        this._focusView.Set(this.graySlider)
-        this._edited.Set(false)
-      endif
-    })
-
-    # Keep the color in sync with the grayscale level
     react.CreateEffect(() => {
       if !this.IsHidden()
-        var gray = libcolor.Hex2Gray(this._color.Get())
-        this.graySlider.value.Set(gray)
+        var gray = libcolor.Hex2Gray(this.color.Get())
+        this.Gray().Set(gray)
       endif
     })
 
-    # The grayscale level is synced back to the color value only if the user
-    # explicitly edits the grayscale color (otherwise everything would
-    # eventually become gray).
     react.CreateEffect(() => {
-      if this._edited.Get() && !this.IsHidden()
-        var sliderValue: number = this.graySlider.value.Get()
-        this._color.Set(libcolor.Gray2Hex(sliderValue))
+      if this.edited.Get() && !this.IsHidden()
+        this.color.Set(libcolor.Gray2Hex(this.Gray().Get()))
       endif
     })
+  enddef
+
+  def Gray(): react.Property
+    return (<SliderView>this.Child(1)).value
   enddef
 endclass
 # }}}
@@ -1451,7 +1431,6 @@ def StylePickerPopup(
   InitHighlight()
   InitTextPropertyTypes(bufnr)
   pHiGroup.Set(empty(hiGroup) ? HiGroupUnderCursor() : hiGroup)
-  pEdited.Set(false)
 
   if !empty(favoritePath)
     pFavorite.Set(LoadPalette(favoritePath))
