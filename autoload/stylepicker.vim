@@ -753,6 +753,7 @@ class SliderView extends UpdatableView
   # Shared reactive properties
   var focusView: react.Property = pFocusView
   var step:      react.Property = pStep
+  var edited:    react.Property = pEdited
 
   def new(this.name, this.max = v:none, this.min = v:none)
     this.value = react.Property.new(this.min)
@@ -793,6 +794,7 @@ class SliderView extends UpdatableView
     endif
 
     this.value.Set(newValue)
+    this.edited.Set(true)
   enddef
 
   def Decrement()
@@ -803,6 +805,7 @@ class SliderView extends UpdatableView
     endif
 
     this.value.Set(newValue)
+    this.edited.Set(true)
   enddef
 endclass
 # }}}
@@ -1001,6 +1004,7 @@ class RgbView extends VStack
   var _color:     react.Property = pColor
   var _focusView: react.Property = pFocusView
   var _mode:      react.Property = pMode
+  var _edited:    react.Property = pEdited
 
   def new()
     this.AddView(this.redSlider)
@@ -1014,6 +1018,7 @@ class RgbView extends VStack
 
       if show
         this._focusView.Set(this.redSlider)
+        this._edited.Set(false)
       endif
     })
 
@@ -1028,7 +1033,7 @@ class RgbView extends VStack
     })
 
     react.CreateEffect(() => {
-      if !this.IsHidden()
+      if this._edited.Get() && !this.IsHidden()
         this._color.Set(
           libcolor.Rgb2Hex(
           this.redSlider.value.Get(),
@@ -1046,11 +1051,13 @@ class HsbView extends VStack
   var hueSlider:        SliderView = SliderView.new('H', 359)
   var saturationSlider: SliderView = SliderView.new('S', 100)
   var brightnessSlider: SliderView = SliderView.new('B', 100)
+  var _rgbValue:        string     = ""
 
   # Shared reactive properties
   var _color:     react.Property = pColor
   var _focusView: react.Property = pFocusView
   var _mode:      react.Property = pMode
+  var _edited:    react.Property = pEdited
 
   def new()
     this.AddView(this.hueSlider)
@@ -1060,33 +1067,38 @@ class HsbView extends VStack
     react.CreateEffect(() => {
       var show = (this._mode.Get() == 'hsb')
 
+      # TODO: use transaction?
       this.Hidden(!show)
 
       if show
         this._focusView.Set(this.hueSlider)
-      endif
-    })
-
-    # Keep the color in sync with the RGB components
-    # FIXME: c may be different from RGB(HSV(c))
-    react.CreateEffect(() => {
-      if !this.IsHidden()
-        var [h, s, b] = libcolor.Hex2Hsv(this._color.Get())
-        this.hueSlider.value.Set(h)
-        this.saturationSlider.value.Set(s)
-        this.brightnessSlider.value.Set(b)
+        this._edited.Set(false)
       endif
     })
 
     react.CreateEffect(() => {
       if !this.IsHidden()
-        this._color.Set(
-          libcolor.Hsv2Hex(
+        var currentColor = this._color.Get()
+
+        if currentColor != this._rgbValue
+          var [h, s, b] = libcolor.Hex2Hsv(currentColor)
+
+          this._rgbValue = currentColor
+          this.hueSlider.value.Set(h)
+          this.saturationSlider.value.Set(s)
+          this.brightnessSlider.value.Set(b)
+        endif
+      endif
+    })
+
+    react.CreateEffect(() => {
+      if this._edited.Get() && !this.IsHidden()
+        this._rgbValue = libcolor.Hsv2Hex(
           this.hueSlider.value.Get(),
           this.saturationSlider.value.Get(),
           this.brightnessSlider.value.Get()
-          )
         )
+        this._color.Set(this._rgbValue)
       endif
     })
   enddef
@@ -1100,6 +1112,7 @@ class GrayscaleView extends VStack
   var _color:     react.Property = pColor
   var _focusView: react.Property = pFocusView
   var _mode:      react.Property = pMode
+  var _edited:    react.Property = pEdited
 
   def new()
     this.AddView(GrayscaleSectionView.new())
@@ -1112,6 +1125,7 @@ class GrayscaleView extends VStack
 
       if show
         this._focusView.Set(this.graySlider)
+        this._edited.Set(false)
       endif
     })
 
@@ -1127,7 +1141,7 @@ class GrayscaleView extends VStack
     # explicitly edits the grayscale color (otherwise everything would
     # eventually become gray).
     react.CreateEffect(() => {
-      if !this.IsHidden() && pEdited.Get()
+      if this._edited.Get() && !this.IsHidden()
         var sliderValue: number = this.graySlider.value.Get()
         this._color.Set(libcolor.Gray2Hex(sliderValue))
       endif
