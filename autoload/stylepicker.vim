@@ -910,15 +910,7 @@ class SliderGroupView extends VStack
     endfor
 
     react.CreateEffect(() => {
-      var isHidden = this.mode.Get() != this.name
-
-      if this.IsHidden() && !isHidden
-        return
-      endif
-
-      this.Hidden(isHidden)
-
-      if !isHidden
+      if !this.IsHidden()
         this.focusView.Set(this.Child(this.defaultSlider))
         this.edited.Set(false)
       endif
