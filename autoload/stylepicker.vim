@@ -414,7 +414,7 @@ enddef
 # Global Reactive State {{{
 var pHiGroup   = react.Property.new('Normal', sPool)    # Current highlight group
 var pFgBgSp    = react.Property.new('fg',     sPool)    # Current color attribute ('fg', 'bg', or 'sp')
-var pMode      = react.Property.new('rgb',    sPool)    # Kind of sliders (rgb, hsb, grayscale)
+var pMode      = react.Property.new('rgb',    sPool)    # Current mode (rgb, hsb, grayscale, help)
 var pFocusView = react.Property.new(v:none,   sPool)    # View with focus
 var pEdited    = react.Property.new(false,    sPool)    # Was the current color attribute modified by the style picker?
 var pStep      = react.Property.new(1,        sPool)    # Current increment/decrement step
@@ -890,83 +890,6 @@ class FooterView extends UpdatableView
   enddef
 endclass
 # }}}
-# HelpView {{{
-class HelpView extends ContentView
-  def new(isHidden = true)
-    var s = [
-      KeySymbol(kUpKey),                # 00
-      KeySymbol(kDownKey),              # 01
-      KeySymbol(kTopKey),               # 02
-      KeySymbol(kBotKey),               # 03
-      KeySymbol(kFgBgSpKey),            # 04
-      KeySymbol(kSpBgFgKey),            # 05
-      KeySymbol(kToggleTrackingKey),    # 06
-      KeySymbol(kRgbPaneKey),           # 07
-      KeySymbol(kHsbPaneKey),           # 08
-      KeySymbol(kGrayPaneKey),          # 09
-      KeySymbol(kCloseKey),             # 10
-      KeySymbol(kCancelKey),            # 11
-      KeySymbol(kHelpKey),              # 12
-      KeySymbol(kToggleBoldKey),        # 13
-      KeySymbol(kToggleItalicKey),      # 14
-      KeySymbol(kToggleReverseKey),     # 15
-      KeySymbol(kToggleStandoutKey),    # 16
-      KeySymbol(kToggleStrikeThruKey),  # 17
-      KeySymbol(kToggleUnderlineKey),   # 18
-      KeySymbol(kToggleUndercurlKey),   # 19
-      KeySymbol(kToggleUnderdashedKey), # 20
-      KeySymbol(kToggleUnderdottedKey), # 21
-      KeySymbol(kToggleUnderdoubleKey), # 22
-      KeySymbol(kIncrementKey),         # 23
-      KeySymbol(kDecrementKey),         # 24
-      KeySymbol(kYankKey),              # 25
-      KeySymbol(kPasteKey),             # 26
-      KeySymbol(kSetColorKey),          # 27
-      KeySymbol(kSetHiGroupKey),        # 28
-      KeySymbol(kClearKey),             # 29
-      KeySymbol(kAddToFavoritesKey),    # 30
-      KeySymbol(kYankKey),              # 31
-      KeySymbol(kRemoveKey),            # 32
-      KeySymbol(kPickKey),              # 33
-    ]
-    var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
-
-    # Pad with spaces, so all symbol strings have the same width
-    map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
-
-    this.content.Set([
-      TextLine.new('Keyboard Controls')->WithTitle(),
-      BlankLine(),
-      TextLine.new('Popup')->Labeled(),
-      TextLine.new($'{s[00]} Move up           {s[07]} RGB Pane'),
-      TextLine.new($'{s[01]} Move down         {s[08]} HSB Pane'),
-      TextLine.new($'{s[02]} Go to top         {s[09]} Grayscale'),
-      TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
-      TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
-      TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
-      TextLine.new($'{s[06]} Toggle tracking   '),
-      BlankLine(),
-      TextLine.new('Attributes')->Labeled(),
-      TextLine.new($'{s[13]} Toggle boldface   {s[18]} Toggle underline'),
-      TextLine.new($'{s[14]} Toggle italics    {s[19]} Toggle undercurl'),
-      TextLine.new($'{s[15]} Toggle reverse    {s[20]} Toggle underdashed'),
-      TextLine.new($'{s[16]} Toggle standout   {s[21]} Toggle underdotted'),
-      TextLine.new($'{s[17]} Toggle strikethru {s[22]} Toggle underdouble'),
-      BlankLine(),
-      TextLine.new('Color')->Labeled(),
-      TextLine.new($'{s[23]} Increment value   {s[27]} Set value'),
-      TextLine.new($'{s[24]} Decrement value   {s[28]} Set hi group'),
-      TextLine.new($'{s[25]} Yank color        {s[29]} Clear color'),
-      TextLine.new($'{s[26]} Paste color       {s[30]} Add to favorites'),
-      BlankLine(),
-      TextLine.new('Recent & Favorites')->Labeled(),
-      TextLine.new($'{s[31]} Yank color        {s[33]} Pick color'),
-      TextLine.new($'{s[32]} Delete color'),
-    ])
-    this.Hidden(isHidden)
-  enddef
-endclass
-# }}}
 # SliderGroupView {{{
 class SliderGroupView extends VStack
   var name:          string
@@ -978,8 +901,6 @@ class SliderGroupView extends VStack
   var mode:      react.Property = pMode
   var edited:    react.Property = pEdited
 
-  public static var e0 = 0
-
   def Init(name: string, sliders: list<SliderView>, defaultSlider = 0)
     this.name = name
     this.defaultSlider = defaultSlider
@@ -989,24 +910,28 @@ class SliderGroupView extends VStack
     endfor
 
     react.CreateEffect(() => {
-      SliderGroupView.e0 += 1
-      var show = (this.mode.Get() == this.name)
+      var isHidden = this.mode.Get() != this.name
 
-      this.Hidden(!show)
+      if this.IsHidden() && !isHidden
+        return
+      endif
 
-      if show
+      this.Hidden(isHidden)
+
+      if !isHidden
         this.focusView.Set(this.Child(this.defaultSlider))
         this.edited.Set(false)
       endif
     })
   enddef
+
+  def Hidden(isHidden: bool)
+    super.Hidden(isHidden || this.mode.Get() != this.name)
+  enddef
 endclass
 # }}}
 # RgbView {{{
 class RgbView extends SliderGroupView
-  public static var e1 = 0
-  public static var e2 = 0
-
   def new()
     super.Init('rgb', [
       SliderView.new('R'),
@@ -1015,7 +940,6 @@ class RgbView extends SliderGroupView
     ])
 
     react.CreateEffect(() => {
-      RgbView.e1 += 1
       if !this.IsHidden()
         var [r, g, b] = libcolor.Hex2Rgb(this.color.Get())
         this.Red().Set(r)
@@ -1025,7 +949,6 @@ class RgbView extends SliderGroupView
     })
 
     react.CreateEffect(() => {
-      RgbView.e2 += 1
       if this.edited.Get() && !this.IsHidden()
         this.color.Set(
           libcolor.Rgb2Hex(
@@ -1246,6 +1169,108 @@ class ColorPaletteView extends VStack
   enddef
 endclass
 # }}}
+# HelpView {{{
+class HelpView extends ContentView
+  # Shared reactive properties
+  var mode: react.Property = pMode
+
+  def new()
+    var s = [
+      KeySymbol(kUpKey),                # 00
+      KeySymbol(kDownKey),              # 01
+      KeySymbol(kTopKey),               # 02
+      KeySymbol(kBotKey),               # 03
+      KeySymbol(kFgBgSpKey),            # 04
+      KeySymbol(kSpBgFgKey),            # 05
+      KeySymbol(kToggleTrackingKey),    # 06
+      KeySymbol(kRgbPaneKey),           # 07
+      KeySymbol(kHsbPaneKey),           # 08
+      KeySymbol(kGrayPaneKey),          # 09
+      KeySymbol(kCloseKey),             # 10
+      KeySymbol(kCancelKey),            # 11
+      KeySymbol(kHelpKey),              # 12
+      KeySymbol(kToggleBoldKey),        # 13
+      KeySymbol(kToggleItalicKey),      # 14
+      KeySymbol(kToggleReverseKey),     # 15
+      KeySymbol(kToggleStandoutKey),    # 16
+      KeySymbol(kToggleStrikeThruKey),  # 17
+      KeySymbol(kToggleUnderlineKey),   # 18
+      KeySymbol(kToggleUndercurlKey),   # 19
+      KeySymbol(kToggleUnderdashedKey), # 20
+      KeySymbol(kToggleUnderdottedKey), # 21
+      KeySymbol(kToggleUnderdoubleKey), # 22
+      KeySymbol(kIncrementKey),         # 23
+      KeySymbol(kDecrementKey),         # 24
+      KeySymbol(kYankKey),              # 25
+      KeySymbol(kPasteKey),             # 26
+      KeySymbol(kSetColorKey),          # 27
+      KeySymbol(kSetHiGroupKey),        # 28
+      KeySymbol(kClearKey),             # 29
+      KeySymbol(kAddToFavoritesKey),    # 30
+      KeySymbol(kYankKey),              # 31
+      KeySymbol(kRemoveKey),            # 32
+      KeySymbol(kPickKey),              # 33
+    ]
+    var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
+
+    # Pad with spaces, so all symbol strings have the same width
+    map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
+
+    this.content.Set([
+      TextLine.new('Keyboard Controls')->WithTitle(),
+      BlankLine(),
+      TextLine.new('Popup')->Labeled(),
+      TextLine.new($'{s[00]} Move up           {s[07]} RGB Pane'),
+      TextLine.new($'{s[01]} Move down         {s[08]} HSB Pane'),
+      TextLine.new($'{s[02]} Go to top         {s[09]} Grayscale'),
+      TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
+      TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
+      TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
+      TextLine.new($'{s[06]} Toggle tracking   '),
+      BlankLine(),
+      TextLine.new('Attributes')->Labeled(),
+      TextLine.new($'{s[13]} Toggle boldface   {s[18]} Toggle underline'),
+      TextLine.new($'{s[14]} Toggle italics    {s[19]} Toggle undercurl'),
+      TextLine.new($'{s[15]} Toggle reverse    {s[20]} Toggle underdashed'),
+      TextLine.new($'{s[16]} Toggle standout   {s[21]} Toggle underdotted'),
+      TextLine.new($'{s[17]} Toggle strikethru {s[22]} Toggle underdouble'),
+      BlankLine(),
+      TextLine.new('Color')->Labeled(),
+      TextLine.new($'{s[23]} Increment value   {s[27]} Set value'),
+      TextLine.new($'{s[24]} Decrement value   {s[28]} Set hi group'),
+      TextLine.new($'{s[25]} Yank color        {s[29]} Clear color'),
+      TextLine.new($'{s[26]} Paste color       {s[30]} Add to favorites'),
+      BlankLine(),
+      TextLine.new('Recent & Favorites')->Labeled(),
+      TextLine.new($'{s[31]} Yank color        {s[33]} Pick color'),
+      TextLine.new($'{s[32]} Delete color'),
+    ])
+
+    react.CreateEffect(() => {
+      var isHidden = (this.mode.Get() != 'help')
+      this.Hidden(isHidden)
+    })
+  enddef
+endclass
+# }}}
+# StylePickerView {{{
+class StylePickerView extends VStack
+  # Shared reactive state
+  var mode: react.Property = pMode
+
+  def new(views: list<View>)
+    for view in views
+      this.AddView(view)
+    endfor
+
+    react.CreateEffect(() => {
+      var isHidden = (this.mode.Get() == 'help')
+      this.Hidden(isHidden)
+    })
+  enddef
+endclass
+# }}}
+
 # Event Processing {{{
 def MakeAction(F: func()): Action
   return (): bool => {
@@ -1297,6 +1322,10 @@ var ActionShowHsb = MakeAction(() => {
 
 var ActionShowGrayscale = MakeAction(() => {
   pMode.Set('gray')
+})
+
+var ActionShowHelp = MakeAction(() => {
+  pMode.Set('help')
 })
 
 var ActionSelectNextView = MakeAction(() => {
@@ -1437,25 +1466,29 @@ def StylePickerPopup(
   endif
 
   sRootView = VStack.new([
-    HeaderView.new(pHiGroup, pFgBgSp, pStyle),
-    BlankView.new(),
-    RgbView.new(),
-    HsbView.new(),
-    GrayscaleView.new(),
-    StepView.new(),
-    BlankView.new(),
-    ColorInfoView.new(pHiGroup, pFgBgSp, pColor),
-    BlankView.new(),
-    QuotationView.new(),
-    BlankView.new(),
-    ColorPaletteView.new(pRecent, 'Recent Colors', bufnr),
-    ColorPaletteView.new(pFavorite, 'Favorite Colors', bufnr)
+    StylePickerView.new([
+      HeaderView.new(pHiGroup, pFgBgSp, pStyle),
+      BlankView.new(),
+      RgbView.new(),
+      HsbView.new(),
+      GrayscaleView.new(),
+      StepView.new(),
+      BlankView.new(),
+      ColorInfoView.new(pHiGroup, pFgBgSp, pColor),
+      BlankView.new(),
+      QuotationView.new(),
+      BlankView.new(),
+      ColorPaletteView.new(pRecent, 'Recent Colors', bufnr),
+      ColorPaletteView.new(pFavorite, 'Favorite Colors', bufnr),
+    ]),
+    HelpView.new(),
   ])
 
   sRootView.OnKeyCode(kCancelKey,    ActionCancel)
   sRootView.OnKeyCode(kRgbPaneKey,   ActionShowRgb)
   sRootView.OnKeyCode(kHsbPaneKey,   ActionShowHsb)
   sRootView.OnKeyCode(kGrayPaneKey,  ActionShowGrayscale)
+  sRootView.OnKeyCode(kHelpKey,      ActionShowHelp)
   sRootView.OnKeyCode(kFgBgSpKey,    ActionFgBgSp)
   sRootView.OnKeyCode(kSpBgFgKey,    ActionSpBgFg)
   sRootView.OnKeyCode(kUpKey,        ActionSelectPreviousView)
