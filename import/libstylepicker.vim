@@ -172,6 +172,10 @@ export class View
   enddef
 
   def RespondToKeyEvent(keyCode: string): bool
+    if this.IsHidden()
+      return this.parent.RespondToKeyEvent(keyCode)
+    endif
+
     if this._action->has_key(keyCode) && this._action[keyCode]()
       return true
     endif
