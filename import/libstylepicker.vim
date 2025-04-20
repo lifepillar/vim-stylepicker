@@ -1,13 +1,14 @@
 vim9script
 
-#   # A simple line-oriented UI library.
-#  # "Line-oriented" means that the rendering unit is a full horizontal line
-# # rather than a single character. Views can be vertically stacked, but not
-## horizontally. This works fine for the style picker UI.
-
 import 'libreactive.vim' as react
 
-export type Action = func(): bool
+# The content of a view is a list of dictionaries of the form:
+#
+#    {text: '...', props: [...]}
+#
+# where `props` is a list of text properties.
+# See `:help popup_create-arguments` for details.
+export type ViewContent = list<dict<any>>
 
 export class TextProperty
   #   #
@@ -20,163 +21,83 @@ export class TextProperty
   var id:   number = 1 # Optional property ID
 endclass
 
+def FormatTextProperties(text: string, textProperties: list<TextProperty>): list<dict<any>>
+  #   #
+  #  # Return the text properties in a format suitable for popup_settext().
+  # #
+  ##
+  var props: list<dict<any>> = []
+
+  for prop in textProperties
+    var xl = byteidx(text, prop.xl)
+    var xr = byteidx(text, prop.xr)
+    props->add({col: 1 + xl, length: xr - xl, type: prop.type, id: prop.id})
+  endfor
+
+  return props
+enddef
+
 export class TextLine
   #   #
   #  # A string with attached text properties.
   # #
   ##
-  var text:  string
-  var props: list<TextProperty> = []
+  var value: dict<any> # {text: '...', props: []}
 
-  def Format(): dict<any>
-    #   #
-    #  # Return the text line as a dictionary suitable for popup_settext().
-    # #
-    ##
-    var props: list<dict<any>> = []
+  def new(text: string, props: list<TextProperty>= [])
+    this.value = {text: text, props: FormatTextProperties(text, props)}
+  enddef
 
-    for prop in this.props
-      var xl = byteidx(this.text, prop.xl)
-      var xr = byteidx(this.text, prop.xr)
-      props->add({col: 1 + xl, length: xr - xl, type: prop.type, id: prop.id})
-    endfor
+  def Text(): string
+    return this.value.text
+  enddef
 
-    return {text: this.text, props: props}
+  def Add(...props: list<TextProperty>)
+    this.value.props->extend(FormatTextProperties(this.value.text, props))
   enddef
 endclass
 
-def AddTextProperties(bufnr: number, lnum: number, line: TextLine)
-  #   #
-  #  # Add the text properties of a text line to the buffer.
-  # #
-  ##
-  for prop in line.props
-    var xl = byteidx(line.text, prop.xl)
-    var xr = byteidx(line.text, prop.xr)
+export abstract class View
+  var  focusable:   bool           = false
+  var  focused:     react.Property = react.Property.new(false)
+  var  parent:      View           = this
+  var  llink:       View           = this  # Left subtree
+  var  rlink:       View           = this  # Right subtree
+  var  ltag:        bool           = false # false=thread, true=link to first child
+  var  rtag:        bool           = false # false=thread, true=link to right sibling
 
-    prop_add(lnum, 1 + xl, {
-      type:   prop.type,
-      length: xr - xl,
-      bufnr:  bufnr,
-      id:     prop.id,
-    })
-  endfor
-enddef
+  var _keyAction:   dict<func()>
+  var _mouseAction: dict<func(number, number)>
 
-def DrawLines(bufnr: number, lnum: number, lines: list<TextLine>)
-  #   #
-  #  # Draw the given lines on the buffer starting at `lnum`.
-  # #
-  ##
-
-  # Make sure the buffer has enough lines
-  var max_lnum = lnum + len(lines) - 1
-  var linecount  = getbufinfo(bufnr)[0].linecount
-
-  if max_lnum > linecount
-    appendbufline(bufnr, '$', repeat([''], max_lnum - linecount))
-  endif
-
-  # Draw the lines
-  var i = lnum
-
-  for line in lines
-    setbufline(bufnr, i, line.text)
-    AddTextProperties(bufnr, i, line)
-    ++i
-  endfor
-enddef
-
-export class View
-  #   #
-  #  # Base class for all views and containers.
-  # # The view hierarchy is grounded on the *natural correspondence* between
-  ## forests and binary trees. See TAOCP, §2.3.2.
-  var  parent:     View = this  # Container view
-  var  llink:      View = this  # Left subtree
-  var  rlink:      View = this  # Right subtree
-  var  ltag:       bool = false # false=thread, true=link to first child
-  var  rtag:       bool = false # false=thread, true=link to right sibling
-  var  focusable:  bool = false
-
-  var _hidden:    react.Property = react.Property.new(false)
-  var _action:    dict<Action>   = {}
-
-  def string(): string
-    return '[View]'
-  enddef
-
-  def Body(): list<TextLine>
-    return []
-  enddef
-
-  def IsHidden(): bool
-    return this._hidden.Get()
-  enddef
-
-  def Hidden(isHidden: bool)
-    this._hidden.Set(isHidden)
-  enddef
+  abstract def Body(): list<dict<any>>
 
   def Height(): number
     return len(this.Body())
   enddef
 
-  def IsRoot(): bool
-    return this.parent is this
-  enddef
-
-  def IsLeaf(): bool
-    return !this.ltag
-  enddef
-
-  def Next(): View
-    if this.rlink is this
-      return this.FirstLeaf()
-    endif
-
-    var nextView = this.rlink
-
-    if !this.rtag
-      return nextView
-    endif
-
-    while nextView.ltag
-      nextView = nextView.llink
-    endwhile
-
-    return nextView
-  enddef
-
-  def Previous(): View
-    var prevView = this.llink
-
-    if !this.ltag
-      return prevView
-    endif
-
-    while prevView.rtag
-      prevView = prevView.rlink
-    endwhile
-
-    return prevView
-  enddef
-
-  def FirstLeaf(): View
+  def Focusable(isFocusable: bool): View
+    this.focusable = isFocusable
     return this
   enddef
 
-  def OnKeyCode(keyCode: string, F: Action): View
-    this._action[keyCode] = F
+  def Focused(isFocused: bool): View
+    this.focused.Set(isFocused)
+    return this
+  enddef
+
+  def OnKeyPress(keyCode: string, F: func()): View
+    this._keyAction[keyCode] = F
+    return this
+  enddef
+
+  def OnMouseEvent(keyCode: string, F: func(number, number)): View
+    this._mouseAction[keyCode] = F
     return this
   enddef
 
   def RespondToKeyEvent(keyCode: string): bool
-    if this.IsHidden()
-      return this.parent.RespondToKeyEvent(keyCode)
-    endif
-
-    if this._action->has_key(keyCode) && this._action[keyCode]()
+    if this._keyAction->has_key(keyCode)
+      this._keyAction[keyCode]()
       return true
     endif
 
@@ -188,7 +109,8 @@ export class View
   enddef
 
   def RespondToMouseEvent(keyCode: string, lnum: number, col: number): bool
-    if this._action->has_key(keyCode) && this._action[keyCode]()
+    if this._mouseAction->has_key(keyCode)
+      this._mouseAction[keyCode](lnum, col)
       return true
     endif
 
@@ -198,7 +120,7 @@ export class View
 
     # Find the child containing lnum
     var lnum_ = lnum
-    var child = this.llink
+    var child = this.FirstChild()
 
     while true
       var height = child.Height()
@@ -207,138 +129,27 @@ export class View
         return child.RespondToMouseEvent(keyCode, lnum_, col)
       endif
 
-      if !child.rtag
+      if child.IsLastChild()
         break
       endif
 
       lnum_ -= height
-      child = child.rlink
+      child = child.Next()
     endwhile
 
     return false
   enddef
 
-  def Offset(): number
-    #   #
-    #  # Return the offset of this view with respect to the root container.
-    # #
-    ##
-    if this.IsRoot()
-      return 0
-    endif
-
-    var offset = this.parent.Offset()
-    var node = this.parent.llink
-
-    while node isnot this
-      offset += node.Height()
-      node = node.rlink
-    endwhile
-
-    return offset
+  def IsRoot(): bool
+    return this.parent is this
   enddef
 
-  def Paint(bufnr: number)
+  def IsLeaf(): bool
+    return !this.ltag
   enddef
 
-  def Unpaint(bufnr: number)
-  enddef
-
-  def Render(bufnr: number)
-    react.CreateEffect(() => {
-      if this.IsHidden()
-        this.Unpaint(bufnr)
-      else
-        this.Paint(bufnr)
-      endif
-    })
-  enddef
-endclass
-
-export class ContentView extends View
-  #   #
-  #  # A leaf view that has actual content that can be drawn in a buffer.
-  # #
-  ##
-  var  content    = react.Property.new([])
-  var _old_height = 0 # Height of the view last time it was rendered
-
-  def string(): string
-    return join(mapnew(this.Body(), (_, line: TextLine) => line.text))
-  enddef
-
-  def Body(): list<TextLine>
-    if this._hidden.Get()
-      return []
-    endif
-
-    return this.content.Get()
-  enddef
-
-  def Unpaint(bufnr: number)
-    var lnum = 1 + this.Offset()
-    deletebufline(bufnr, lnum, lnum + this._old_height - 1)
-    this._old_height = 0
-  enddef
-
-  def Paint(bufnr: number)
-    var body       = this.Body()
-    var height     = this.Height()
-    var lnum       = 1 + this.Offset()
-    var old_height = this._old_height
-
-    if height == old_height # Fast path
-      DrawLines(bufnr, lnum, body)
-      return
-    endif
-
-    # Adjust the vertical space to the new size of the view
-    if height > old_height
-      var linecount  = getbufinfo(bufnr)[0].linecount
-      var is_empty = linecount == 1 && empty(getbufoneline(bufnr, 1))
-
-      if !is_empty
-        appendbufline(bufnr, lnum, repeat([''], height - old_height))
-      endif
-    else
-      deletebufline(bufnr, lnum + height, lnum + old_height - 1)
-    endif
-
-    this._old_height = height
-
-    DrawLines(bufnr, lnum, body)
-  enddef
-endclass
-
-export class VStack extends View
-  #   #
-  #  # A container to vertically stack other views.
-  # #
-  ##
-  def new(views: list<View> = [])
-    for view in views
-      this.AddView(view)
-    endfor
-  enddef
-
-  def string(): string
-    if this.IsRoot()
-      return '[Root view]'
-    endif
-
-    return $'[Subview of {this.parent.string()}]'
-  enddef
-
-  def Child(index: number): View
-    var i = 0
-    var child = this.llink
-
-    while i < index
-      child = child.rlink
-      ++i
-    endwhile
-
-    return child
+  def IsLastChild(): bool
+    return !this.rtag
   enddef
 
   def NumChildren(): number
@@ -357,49 +168,20 @@ export class VStack extends View
     return i
   enddef
 
-  def ApplyToChildren(F: func(View))
-    if this.IsLeaf()
-      return
-    endif
+  def Child(index: number): View
+    var i = 0
+    var child = this.llink
 
-    var node = this.llink
-
-    while true
-      F(node)
-
-      if !node.rtag
-        break
-      endif
-
-      node = node.rlink
+    while i < index
+      child = child.rlink
+      ++i
     endwhile
+
+    return child
   enddef
 
-  def Body(): list<TextLine>
-    var body: list<TextLine> = []
-
-    this.ApplyToChildren((child: View) => {
-      body += child.Body()
-    })
-
-    return body
-  enddef
-
-  def Height(): number
-    var height = 0
-
-    this.ApplyToChildren((child: View) => {
-      height += child.Height()
-    })
-
-    return height
-  enddef
-
-  def Hidden(isHidden: bool)
-    this.ApplyToChildren((child: View) => {
-      child.Hidden(isHidden)
-    })
-    this._hidden.Set(isHidden)
+  def FirstChild(): View
+    return this.llink
   enddef
 
   def FirstLeaf(): View
@@ -410,6 +192,38 @@ export class VStack extends View
     endwhile
 
     return node
+  enddef
+
+  def Next(): View
+    if this.rlink is this
+      return this.FirstLeaf()
+    endif
+
+    var nextNode = this.rlink
+
+    if !this.rtag
+      return nextNode
+    endif
+
+    while nextNode.ltag
+      nextNode = nextNode.llink
+    endwhile
+
+    return nextNode
+  enddef
+
+  def Previous(): View
+    var prevNode = this.llink
+
+    if !this.ltag
+      return prevNode
+    endif
+
+    while prevNode.rtag
+      prevNode = prevNode.rlink
+    endwhile
+
+    return prevNode
   enddef
 
   def AddView(view: View)
@@ -438,21 +252,82 @@ export class VStack extends View
     endif
   enddef
 
-  def Render(bufnr: number)
-    this.ApplyToChildren((child: View) => child.Render(bufnr))
+  def ApplyToChildren(F: func(View))
+    if this.IsLeaf()
+      return
+    endif
+
+    var node = this.llink
+
+    while true
+      F(node)
+
+      if !node.rtag
+        break
+      endif
+
+      node = node.rlink
+    endwhile
   enddef
+
 endclass
 
-export class UpdatableView extends ContentView
-  #   # A leaf view which is automatically updated when its observed state
-  #  # changes. Subclasses should call super.Init() in new() and override
-  # # Update().
+export class ReactiveView extends View
+  #   #
+  #  # A reactive view. The view's body is automatically recomputed
+  # # every time any property which the view depends upon is updated.
   ##
-  def Init()
-    react.CreateEffect(this.Update)
+  var _content: react.ComputedProperty
+
+  def new(Fn: func(): list<TextLine>)
+    this.Init(Fn)
   enddef
 
-  def Update()
+  def Init(Fn: func(): list<TextLine>)
+    this._content = react.ComputedProperty.new(
+      (): ViewContent => mapnew(Fn(), (_, l: TextLine): dict<any> => l.value)
+    )
+  enddef
+
+  def Body(): ViewContent
+    return this._content.Get()
   enddef
 endclass
 
+export class StaticView extends View
+  #   #
+  #  # A view whose content does not change.
+  # #
+  ##
+  var _content: ViewContent
+
+  def new(content: list<TextLine>, this.focusable = v:none)
+    this._content = mapnew(content, (_, l: TextLine): dict<any> => l.value)
+  enddef
+
+  def Body(): ViewContent
+    return this._content
+  enddef
+endclass
+
+export class VStack extends View
+  #   #
+  #  # A container to vertically stack other views.
+  # #
+  ##
+  def new(views: list<View> = [])
+    for view in views
+      this.AddView(view)
+    endfor
+  enddef
+
+  def Body(): ViewContent
+    var body: ViewContent = []
+
+    this.ApplyToChildren((child: View) => {
+      body += child.Body()
+    })
+
+    return body
+  enddef
+endclass
