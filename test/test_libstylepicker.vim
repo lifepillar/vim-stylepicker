@@ -151,8 +151,8 @@ enddef
 
 def Test_StylePicker_NestedViews()
   var p1            = react.Property.new('text')
-  var staticView    = StaticView.new([TextLine.new('x'), TextLine.new('y')])
-  var updatableView = ReactiveView.new(() => [TextLine.new(p1.Get())])
+  var staticView    = StaticView.new([TextLine.new('x'), TextLine.new('y')]).Focusable(true).Focused(true)
+  var updatableView = ReactiveView.new(() => [TextLine.new(p1.Get())]).Focusable(true)
   var inner         = VStack.new([staticView])
   var outer         = VStack.new([inner, updatableView])
 
@@ -179,6 +179,34 @@ def Test_StylePicker_NestedViews()
   assert_equal(1, inner.NumChildren())
   assert_equal(0, staticView.NumChildren())
   assert_equal(0, updatableView.NumChildren())
+
+  assert_true(staticView.Root() is outer)
+  assert_true(updatableView.Root() is outer)
+  assert_true(inner.Root() is outer)
+  assert_true(outer.Root() is outer)
+
+  assert_true(staticView.focused.Get(), 'staticView should be initially focused')
+  assert_false(updatableView.focused.Get(), 'updatableView should not have focus')
+
+  outer.FocusNext()
+
+  assert_false(staticView.focused.Get(), 'staticView should have lost focus')
+  assert_true(updatableView.focused.Get(), 'updatableView should have gained focus')
+
+  outer.FocusPrevious()
+
+  assert_true(staticView.focused.Get(), 'staticView should regain focused')
+  assert_false(updatableView.focused.Get(), 'updatableView should lose focus')
+
+  outer.FocusLast()
+
+  assert_false(staticView.focused.Get(), 'FocusLast() should have removed focus from staticView')
+  assert_true(updatableView.focused.Get(), 'FocusLast() should have selected updatableView')
+
+  outer.FocusFirst()
+
+  assert_true(staticView.focused.Get(), 'FocusFirst() should have selected staticView')
+  assert_false(updatableView.focused.Get())
 enddef
 
 def Test_StylePicker_UnicodeTextLine()
@@ -246,48 +274,33 @@ def Test_StylePicker_ViewHierarchy()
     {text: 'E', props: []},
   ], root.Body())
 
-  assert_true(box1.FirstLeaf() is leaf1, 'firstSubview(box1) is leaf1')
-  assert_true(root.llink is box1, 'llink(root) is box1')
-  assert_true(root.rlink is root, 'rlink(root) is root')
-  assert_true(root.ltag)
-  assert_false(root.rtag)
-  assert_true(root.Next() is leaf1, 'next(root) is leaf1')
-  assert_true(root.Previous() is box2, 'prev(root) is box2')
-
-  assert_true(box1.llink is leaf1, 'llink(box1) is leaf1')
-  assert_true(box1.rlink is box2, 'rlink(box1) is box2')
-  assert_true(box1.ltag)
-  assert_true(box1.rtag)
-  assert_true(box1.Next() is leaf3, 'next(box1) is leaf3')
-  assert_true(box1.Previous() is leaf2, 'prev(box1) is leaf2')
-
-  assert_true(leaf1.llink is root, 'llink(leaf1) is root')
-  assert_true(leaf1.rlink is leaf2, 'rlink(leaf1) is leaf2')
-  assert_false(leaf1.ltag)
-  assert_true(leaf1.rtag)
-  assert_true(leaf1.Next() is leaf2, 'next(leaf1) is leaf2')
-  assert_true(leaf1.Previous() is root, 'prev(leaf1) is root')
-
-  assert_true(leaf2.llink is leaf1, 'llink(leaf2) is leaf1')
-  assert_true(leaf2.rlink is box1, 'rlink(leaf2) is box1')
-  assert_false(leaf2.ltag)
-  assert_false(leaf2.rtag)
-  assert_true(leaf2.Next() is box1, 'next(leaf2) is box1')
-  assert_true(leaf2.Previous() is leaf1, 'prev(leaf2) is leaf1')
-
-  assert_true(box2.llink is leaf3, 'llink(box2) is leaf3')
-  assert_true(box2.rlink is root, 'rlink(box2) is root')
-  assert_true(box2.ltag)
-  assert_false(box2.rtag)
-  assert_true(box2.Next() is root, 'next(box2) is root')
-  assert_true(box2.Previous() is leaf3, 'prev(box2) is leaf3')
-
-  assert_true(leaf3.llink is box1, 'llink(leaf3) is box1')
-  assert_true(leaf3.rlink is box2, 'rlink(leaf3) is box2')
-  assert_false(leaf3.ltag)
-  assert_false(leaf3.rtag)
-  assert_true(leaf3.Next() is box2, 'next(leaf3) is box2')
-  assert_true(leaf3.Previous() is box1, 'prev(leaf3) is box1')
+  # Post-order visit
+  assert_true(root.Next() is leaf1)
+  assert_true(leaf1.Next() is leaf2)
+  assert_true(leaf2.Next() is box1)
+  assert_true(box1.Next() is leaf3)
+  assert_true(leaf3.Next() is box2)
+  assert_true(box2.Next() is root)
+  # Reverse order
+  assert_true(root.Previous() is box2)
+  assert_true(box2.Previous() is leaf3)
+  assert_true(leaf3.Previous() is box1)
+  assert_true(box1.Previous() is leaf2)
+  assert_true(leaf2.Previous() is leaf1)
+  assert_true(leaf1.Previous() is root)
+  # First and last leaf
+  assert_true(root.FirstLeaf() is leaf1)
+  assert_true(box1.FirstLeaf() is leaf1)
+  assert_true(box2.FirstLeaf() is leaf3)
+  assert_true(leaf1.FirstLeaf() is leaf1)
+  assert_true(leaf2.FirstLeaf() is leaf2)
+  assert_true(leaf3.FirstLeaf() is leaf3)
+  assert_true(root.LastLeaf() is leaf3)
+  assert_true(box1.LastLeaf() is leaf2)
+  assert_true(box2.LastLeaf() is leaf3)
+  assert_true(leaf1.LastLeaf() is leaf1)
+  assert_true(leaf2.LastLeaf() is leaf2)
+  assert_true(leaf3.LastLeaf() is leaf3)
 enddef
 
 def Test_StylePicker_RespondToKeyEvent()
@@ -316,9 +329,9 @@ def Test_StylePicker_RespondToKeyEvent()
 enddef
 
 def Test_StylePicker_RespondToMouseEvent()
-  var v1    = StaticView.new(mapnew(['a', 'b', 'c'], (_, t) => TextLine.new(t)))
-  var c1    = VStack.new([v1])
-  var root  = VStack.new([c1])
+  var v1   = StaticView.new(mapnew(['a', 'b', 'c'], (_, t) => TextLine.new(t)))
+  var c1   = VStack.new([v1])
+  var root = VStack.new([c1])
 
   def Act(lnum: number, col: number)
   enddef
@@ -359,6 +372,62 @@ def Test_StylePicker_FocusedModifier()
 
   assert_true(isFocused)
   assert_true(result is view)
+enddef
+
+def Test_StylePicker_FocusWhenNothingIsFocused()
+  # If nothing is focused, a view gets the focus
+  var v0   = StaticView.new([TextLine.new('a')])
+  var v1   = StaticView.new([TextLine.new('b')]).Focusable(true)
+  var v2   = StaticView.new([TextLine.new('c')]).Focusable(true)
+  var c1   = VStack.new([v1, v2]).Focusable(true)
+  var c2   = VStack.new([c1])
+  var root = VStack.new([c2]).Focusable(true)
+
+  assert_false(v0.focused.Get())
+  assert_false(v1.focused.Get())
+  assert_false(v2.focused.Get())
+  assert_false(c1.focused.Get())
+  assert_false(c2.focused.Get())
+  assert_false(root.focused.Get())
+
+  root.FocusFirst() # Focus on first focusable node (v1)
+
+  assert_false(v0.focused.Get(),   'FocusFirst() - v0')
+  assert_true(v1.focused.Get(),    'FocusFirst() - v1')
+  assert_false(v2.focused.Get(),   'FocusFirst() - v2')
+  assert_false(c1.focused.Get(),   'FocusFirst() - c1')
+  assert_false(c2.focused.Get(),   'FocusFirst() - c2')
+  assert_false(root.focused.Get(), 'FocusFirst() - root')
+
+  v1.Focused(false)
+  root.FocusNext() # Focus on the next focusable node (v1)
+
+  assert_false(v0.focused.Get(),   'FocusNext() - v0')
+  assert_true(v1.focused.Get(),    'FocusNext() - v1')
+  assert_false(v2.focused.Get(),   'FocusNext() - v2')
+  assert_false(c1.focused.Get(),   'FocusNext() - c1')
+  assert_false(c2.focused.Get(),   'FocusNext() - c2')
+  assert_false(root.focused.Get(), 'FocusNext() - root')
+
+  v1.Focused(false)
+  root.FocusLast() # Focus on last focusable node (v2)
+
+  assert_false(v0.focused.Get(),   'FocusLast() - v0')
+  assert_false(v1.focused.Get(),   'FocusLast() - v1')
+  assert_true(v2.focused.Get(),    'FocusLast() - v2')
+  assert_false(c1.focused.Get(),   'FocusLast() - c1')
+  assert_false(c2.focused.Get(),   'FocusLast() - c2')
+  assert_false(root.focused.Get(), 'FocusLast() - root')
+
+  v2.Focused(false)
+  root.FocusPrevious() # Focus on the previous focusable node (c1)
+
+  assert_false(v0.focused.Get(),   'FocusPrevious() - v0')
+  assert_false(v1.focused.Get(),   'FocusPrevious() - v1')
+  assert_false(v2.focused.Get(),   'FocusPrevious() - v2')
+  assert_true(c1.focused.Get(),    'FocusPrevious() - c1')
+  assert_false(c2.focused.Get(),   'FocusPrevious() - c2')
+  assert_false(root.focused.Get(), 'FocusPrevious() - root')
 enddef
 
 

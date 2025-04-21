@@ -58,6 +58,7 @@ export class TextLine
 endclass
 
 export abstract class View
+  var  hidden:      bool           = false
   var  focusable:   bool           = false
   var  focused:     react.Property = react.Property.new(false)
   var  parent:      View           = this
@@ -83,6 +84,70 @@ export abstract class View
   def Focused(isFocused: bool): View
     this.focused.Set(isFocused)
     return this
+  enddef
+
+  def SubViewWithFocus(): View
+    var view: View = this.FirstLeaf()
+
+    while view isnot this && !view.focused.value
+      view = view.Next()
+    endwhile
+
+    return view
+  enddef
+
+  def FocusPrevious()
+    react.Transaction(() => {
+      var viewWithFocus: View = this.SubViewWithFocus()
+      var view:          View = viewWithFocus.Previous()
+
+      while view isnot viewWithFocus && (!view.focusable || view.hidden)
+        view = view.Previous()
+      endwhile
+
+      viewWithFocus.Focused(false)
+      view.Focused(true)
+    })
+  enddef
+
+  def FocusNext()
+    react.Transaction(() => {
+      var viewWithFocus: View = this.SubViewWithFocus()
+      var view:          View = viewWithFocus.Next()
+
+      while view isnot viewWithFocus && (!view.focusable || view.hidden)
+        view = view.Next()
+      endwhile
+
+      viewWithFocus.Focused(false)
+      view.Focused(true)
+    })
+  enddef
+
+  def FocusFirst()
+    react.Transaction(() => {
+      var view: View = this.FirstLeaf()
+
+      while view isnot this && (!view.focusable || view.hidden)
+        view = view.Next()
+      endwhile
+
+      this.SubViewWithFocus().Focused(false)
+      view.Focused(true)
+    })
+  enddef
+
+  def FocusLast()
+    react.Transaction(() => {
+      var view: View = this.LastLeaf()
+
+      while view isnot this && (!view.focusable || view.hidden)
+        view = view.Previous()
+      endwhile
+
+      this.SubViewWithFocus().Focused(false)
+      view.Focused(true)
+    })
   enddef
 
   def OnKeyPress(keyCode: string, F: func()): View
@@ -140,6 +205,16 @@ export abstract class View
     return false
   enddef
 
+  def Root(): View
+    var node: View = this
+
+    while !node.IsRoot()
+      node = node.parent
+    endwhile
+
+    return node
+  enddef
+
   def IsRoot(): bool
     return this.parent is this
   enddef
@@ -194,12 +269,22 @@ export abstract class View
     return node
   enddef
 
+  def LastLeaf(): View
+    var node: View = this
+
+    while !node.IsLeaf()
+      node = node.Previous()
+    endwhile
+
+    return node
+  enddef
+
   def Next(): View
     if this.rlink is this
       return this.FirstLeaf()
     endif
 
-    var nextNode = this.rlink
+  var nextNode = this.rlink
 
     if !this.rtag
       return nextNode
@@ -269,7 +354,6 @@ export abstract class View
       node = node.rlink
     endwhile
   enddef
-
 endclass
 
 export class ReactiveView extends View
@@ -285,7 +369,13 @@ export class ReactiveView extends View
 
   def Init(Fn: func(): list<TextLine>)
     this._content = react.ComputedProperty.new(
-      (): ViewContent => mapnew(Fn(), (_, l: TextLine): dict<any> => l.value)
+      (): ViewContent => {
+        var body = mapnew(Fn(), (_, l: TextLine): dict<any> => l.value)
+
+        this.hidden = empty(body)
+
+        return body
+      }
     )
   enddef
 

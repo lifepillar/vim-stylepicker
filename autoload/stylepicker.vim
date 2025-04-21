@@ -10,8 +10,7 @@ endif
 import 'libcolor.vim'       as libcolor
 import 'libreactive.vim'    as react
 import 'libstylepicker.vim' as libui
-# }}}
-# Types and Constants {{{
+
 type ReactiveView = libui.ReactiveView
 type StaticView   = libui.StaticView
 type TextLine     = libui.TextLine
@@ -19,7 +18,8 @@ type TextProperty = libui.TextProperty
 type VStack       = libui.VStack
 type View         = libui.View
 type ViewContent  = libui.ViewContent
-
+# }}}
+# Constants {{{
 const kNumColorsPerLine = 10
 
 const kUltimateFallbackColor = {
@@ -40,6 +40,11 @@ const kSpBgFg = {
   'bg': 'fg',
   'fg': 'sp',
 }
+
+const kBorderChars        = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
+const kAsciiBorderChars   = ['-', '|', '-', '|', ':', ':', ':', ':']
+const kSliderSymbols      = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
+const kAsciiSliderSymbols = [" ", ".", ":", "!", "|", "/", "-", "=", "#"]
 
 const kDefaultQuotes = [
   'Absentem edit cum ebrio qui litigat.',
@@ -72,7 +77,7 @@ const kHsbPaneKey           = "H"
 const kIncrementKey         = "\<right>"
 const kLeftClickKey         = "\<leftmouse>"
 const kPasteKey             = "P"
-const kPickKey              = "\<enter>"
+const kChooseKey            = "\<enter>"
 const kRemoveKey            = "D"
 const kRgbPaneKey           = "R"
 const kSetColorKey          = "E"
@@ -84,8 +89,8 @@ const kToggleStandoutKey    = "S"
 const kToggleStrikeThruKey  = "K"
 const kToggleTrackingKey    = "T"
 const kToggleUndercurlKey   = "~"
-const kToggleUnderdottedKey = "-"
-const kToggleUnderdashedKey = "."
+const kToggleUnderdottedKey = "."
+const kToggleUnderdashedKey = "-"
 const kToggleUnderdoubleKey = "="
 const kToggleUnderlineKey   = "U"
 const kTopKey               = "<"
@@ -119,7 +124,7 @@ const kASCIIKey = {
 var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',   true                                    )
 var ascii:           bool         = get(g:, 'stylepicker_ascii',        false                                   )
 var background:      string       = get(g:, 'stylepicker_background',   'Normal'                                )
-var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ['─', '│', '─', '│', '╭', '╮', '╯', '╰'])
+var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ascii ? kAsciiBorderChars : kBorderChars)
 var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''                                      )
 var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
 var marker:          string       = get(g:, 'stylepicker_marker',       ascii ? '>> ' : '❯❯ '                   )
@@ -130,9 +135,7 @@ var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',    1.0     
 var zindex:          number       = get(g:, 'stylepicker_zindex',       50                                      )
 # }}}
 # Internal State {{{
-var sHiGroup:              react.Property           # Reference to the current hi group for autocommands
-var sRecentCapacity:       number       = 20        # Maximum number of recent colors to keep
-var sTimeLastDigitPressed: list<number> = reltime() # Time since last digit key was pressed
+var sHiGroup:              react.Property           # Reference to the current highlight group for autocommands
 var sWinID:                number       = -1        # ID of the style picker popup
 var sX:                    number       = 0         # Horizontal position of the style picker
 var sY:                    number       = 0         # Vertical position of the style picker
@@ -151,7 +154,7 @@ class Config
   static var PopupWidth      = () => max([39 + strdisplaywidth(marker), 42])
   static var RandomQuotation = () => quotes[rand() % len(quotes)]
   static var Recent          = () => recent
-  static var SliderSymbols   = () => ascii ? [" ", ".", ":", "!", "|", "/", "-", "=", "#"] : [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
+  static var SliderSymbols   = () => ascii ? kAsciiSliderSymbols : kSliderSymbols
   static var Star            = () => star
   static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
   static var StepDelay       = () => stepdelay
@@ -195,19 +198,20 @@ def Center(text: string, width: number): string
   return $'{lPad}{text}{rPad}'
 enddef
 
-def Msg(text: string, error = false)
-  if error
-    echohl Error
+def Msg(text: string, highlight = 'Normal', log = true)
+  execute 'echohl' highlight
+
+  if log
+    echomsg $'[StylePicker] {text}'
   else
-    echohl WarningMsg
+    echo $'[StylePicker] {text}'
   endif
 
-  echomsg $'[StylePicker] {text}.'
   echohl None
 enddef
 
 def Error(text: string)
-  Msg(text, true)
+  Msg(text, 'Error')
 enddef
 
 def Notification(
@@ -349,7 +353,7 @@ def GetHiGroupColor(
   if fgBgSp == 'sp'
     return GetHiGroupColor(hiGroup, 'fg')
   elseif hiGroup == 'Normal'
-    return kUltimateFallbackColor[&bg][fgBgSp]
+    return kUltimateFallbackColor[fgBgSp][&bg]
   endif
 
   return GetHiGroupColor('Normal', fgBgSp)
@@ -393,12 +397,29 @@ def SavePalette(palette: list<string>, savePath: string)
   endtry
 enddef
 
+def ChooseIndex(max: number): number
+  Msg($'Which color (0-{max})? ')
+
+  var key = getcharstr()
+  echo "\r"
+
+  if key =~ '\m^\d\+$'
+    var n = str2nr(key)
+
+    if n <= max
+      return n
+    endif
+  endif
+
+  return -1
+enddef
+
 def ChooseGuiColor(): string
   #   #
   #  # Prompt the user to enter a hex value for a color.
   # #  Return an empty string if the input is invalid.
   ##
-  var newCol = input('New color: #', '')
+  var newCol = input('[StylePicker] New color: #', '')
   echo "\r"
 
   if newCol =~ '\m^[0-9a-fa-f]\{1,6}$'
@@ -417,14 +438,29 @@ enddef
 def ChooseTermColor(): string
   #   #
   #  # Prompt the user to enter a numeric value for a terminal color and
-  # #  return the value as a string.
-  ##   Return an empty string if the input is invalid.
-  var newCol = input('New terminal color [16-255]: ', '')
+  # # return the value as a hex color string.
+  ## Return an empty string if the input is invalid.
+  var newCol = input('[StylePicker] New terminal color [16-255]: ', '')
   echo "\r"
-  const numCol = str2nr(newCol)
+  var numCol = str2nr(newCol)
 
   if 16 <= numCol && numCol <= 255
     return libcolor.Xterm2Hex(numCol)
+  endif
+
+  return ''
+enddef
+
+def ChooseHiGroup(): string
+  #   #
+  #  # Prompt the user to enter a the name of a highlight group.
+  # # Return an empty string if the input is invalid.
+  ##
+  var hiGroup = input('[StylePicker] Highlight group: ', '', 'highlight')
+  echo "\r"
+
+  if hlexists(hiGroup)
+    return hiGroup
   endif
 
   return ''
@@ -438,12 +474,13 @@ enum ColorState
 endenum
 
 class ColorProperty extends react.Property
-  #   #
-  #  # A color property is backed by a Vim's highlight group,
-  # # hence, it needs special management.
+  #   # A color property is backed by a Vim's highlight group,
+  #  # hence, it needs special management.
+  # # A color property stores the hexadecimal value of the color.
   ##
   var colorState: react.Property = react.Property.new(ColorState.New)
   var _hiGroup:   string
+  var _fgBgSp:    string
   var _guiAttr:   string # 'guifg', 'guibg', or 'guisp'
   var _ctermAttr: string # 'ctermfg', 'ctermbg', or 'ctermul'
 
@@ -453,12 +490,12 @@ class ColorProperty extends react.Property
     # Reinitialize this property's value every time the highlight group changes
     react.CreateEffect(() => {
       this._hiGroup   = hiGroup.Get()
-      var  _fgBgSp    = fgBgSp.Get()
-      this._guiAttr   = $'gui{_fgBgSp}'
-      this._ctermAttr = 'cterm' .. CtermAttr(_fgBgSp, 'cterm')
+      this._fgBgSp    = fgBgSp.Get()
+      this._guiAttr   = $'gui{this._fgBgSp}'
+      this._ctermAttr = 'cterm' .. CtermAttr(this._fgBgSp, 'cterm')
 
       this.colorState.Set(ColorState.New)
-      this.Set_(GetHiGroupColor(this._hiGroup, _fgBgSp)) # `super` does not compile in a lambda
+      this.Set_(GetHiGroupColor(this._hiGroup, this._fgBgSp)) # `super` does not compile in a lambda
     })
   enddef
 
@@ -472,15 +509,17 @@ class ColorProperty extends react.Property
     endif
 
     var attrs: dict<any> = {name: this._hiGroup, [this._guiAttr]: newValue}
+    var newValue_ = newValue
 
-    if newValue == 'NONE'
+    if newValue_ == 'NONE'
       attrs[this._ctermAttr] = 'NONE'
+      newValue_ = kUltimateFallbackColor[this._fgBgSp][&bg]
     else
       attrs[this._ctermAttr] = string(libcolor.Approximate(newValue).xterm)
     endif
 
     hlset([attrs])
-    super.Set(newValue)
+    super.Set(newValue_)
   enddef
 
   def Set_(newValue: string)
@@ -591,62 +630,69 @@ class State
   var saturation: react.ComputedProperty
   var brightness: react.ComputedProperty
 
-  def new(hiGroup: string, fgBgSp: string, favoritePath = '')
+  var _timeSinceLastDigitPressed: list<number> = reltime() # Time since last digit key was pressed
+
+  def new(hiGroup: string, fgBgSp: string)
     this.hiGroup   = react.Property.new(hiGroup)
     this.fgBgSp    = react.Property.new(fgBgSp)
     this.color     = ColorProperty.new(this.hiGroup, this.fgBgSp)
     this.style     = StyleProperty.new(this.hiGroup)
-
-    this.rgb       = react.ComputedProperty.new((): list<number> => {
-      if this.pane.Get() == kRgbPaneKey
-        return libcolor.Hex2Rgb(this.color.Get())
-      endif
-      return [0, 0, 0]
-    })
+    this.rgb       = react.ComputedProperty.new((): list<number> => libcolor.Hex2Rgb(this.color.Get()))
     this.red       = react.ComputedProperty.new(() => this.rgb.Get()[0])
     this.green     = react.ComputedProperty.new(() => this.rgb.Get()[1])
     this.blue      = react.ComputedProperty.new(() => this.rgb.Get()[2])
-
     this.cachedHsb = react.Property.new(libcolor.Hex2Hsv(this.color.Get()))
     this.hsb       = react.ComputedProperty.new((): list<number> => {
-      if this.pane.Get() == kHsbPaneKey
-        var col = this.color.Get()
-        var hsb = this.cachedHsb.Get()
-        var hex = libcolor.Hsv2Hex(hsb[0], hsb[1], hsb[2])
+      var col = this.color.Get()
+      var hsb = this.cachedHsb.Get()
+      var hex = libcolor.Hsv2Hex(hsb[0], hsb[1], hsb[2])
 
-        if col == hex
-          return hsb
-        endif
-
-        return libcolor.Hex2Hsv(col)
+      if col == hex
+        return hsb
       endif
 
-      return [0, 0, 0]
+      return libcolor.Hex2Hsv(col)
     })
     this.hue        = react.ComputedProperty.new(() => this.hsb.Get()[0])
     this.saturation = react.ComputedProperty.new(() => this.hsb.Get()[1])
     this.brightness = react.ComputedProperty.new(() => this.hsb.Get()[2])
-
     this.gray = react.ComputedProperty.new(() => {
-      if this.pane.Get() == kGrayPaneKey
-        var [r, g, b] = this.rgb.Get()
-        return libcolor.Rgb2Gray(r, g, b)
-      endif
-      return 0
+      var [r, g, b] = this.rgb.Get()
+      return libcolor.Rgb2Gray(r, g, b)
     })
 
     react.CreateEffect(() => { # Save to recent palette when a color is modified
       if this.color.colorState.Get() == ColorState.Edited
-        this.SaveToRecent(this.color.value)
-        this.color.colorState.Set(ColorState.Saved)
+        this.SaveToRecent()
       endif
     })
 
-    if !empty(favoritePath)
-      this.favorite.Set(LoadPalette(favoritePath))
+    if !empty(Config.FavoritePath())
+      this.favorite.Set(LoadPalette(Config.FavoritePath()))
     endif
 
     sHiGroup = this.hiGroup # Allow setting the highlight group from an autocommand
+  enddef
+
+  def SetStep(digit: number)
+    var newStep = digit
+    var elapsed = this._timeSinceLastDigitPressed->reltime()
+
+    this._timeSinceLastDigitPressed = reltime()
+
+    if elapsed->reltimefloat() <= Config.StepDelay()
+      newStep = 10 * this.step.Get() + newStep
+
+      if newStep > 99
+        newStep = digit
+      endif
+    endif
+
+    if newStep < 1
+      newStep = 1
+    endif
+
+    this.step.Set(newStep)
   enddef
 
   def SetRgb(r: number, g: number, b: number)
@@ -694,18 +740,21 @@ class State
     this.color.Set(libcolor.Gray2Hex(gray))
   enddef
 
-  def SaveToRecent(color: string)
+  def SaveToRecent()
     var recentColors: list<string> = this.recent.value
+    var color = this.color.Get()
 
     if color->NotIn(recentColors)
       recentColors->add(color)
 
-      if len(recentColors) > sRecentCapacity
+      if len(recentColors) > Config.Recent()
         remove(recentColors, 0)
       endif
 
       this.recent.Set(recentColors, {force: true})
     endif
+
+    this.color.colorState.Set(ColorState.Saved)
   enddef
 endclass
 # }}}
@@ -825,6 +874,14 @@ def UntrackCursorAutoCmd()
   endif
 enddef
 
+def ToggleTrackCursor()
+  if exists('#StylePicker#CursorMoved')
+    UntrackCursorAutoCmd()
+  else
+    TrackCursorAutoCmd()
+  endif
+enddef
+
 def DisableAllAutocommands()
   if exists('#StylePicker')
     autocmd! StylePicker
@@ -838,15 +895,15 @@ def BlankView(height = 1, width = 0): View
 enddef
 # }}}
 # HeaderView {{{
-def HeaderView(reactiveState: State): View
+def HeaderView(rstate: State): View
   const attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
   const width   = Config.PopupWidth()
   const offset  = width - strcharlen(attrs)
 
   return ReactiveView.new(() => {
-    var hiGroup = reactiveState.hiGroup.Get()
-    var fgBgSp  = reactiveState.fgBgSp.Get()
-    var style   = reactiveState.style.Get()
+    var hiGroup = rstate.hiGroup.Get()
+    var fgBgSp  = rstate.fgBgSp.Get()
+    var style   = rstate.style.Get()
     var spaces  = repeat(' ', width - strcharlen(hiGroup) - strcharlen(fgBgSp) - strcharlen(attrs) - 3)
     var text    = $"[{fgBgSp}] {hiGroup}{spaces}{attrs}"
 
@@ -893,37 +950,16 @@ def GrayscaleSectionView(): View
 enddef
 # }}}
 # StepView {{{
-def StepView(reactiveState: State): View
+def StepView(rstate: State): View
   return ReactiveView.new(() => {
     return [
-      TextLine.new(printf('Step  %02d', reactiveState.step.Get()))->Labeled(0, 4),
+      TextLine.new(printf('Step  %02d', rstate.step.Get()))->Labeled(0, 4),
       BlankLine(),
     ]
   })
 enddef
 # }}}
 # SliderView {{{
-def SetStep(step: react.Property, digit: number)
-  var newStep = digit
-  var elapsed = sTimeLastDigitPressed->reltime()
-
-  sTimeLastDigitPressed = reltime()
-
-  if elapsed->reltimefloat() <= Config.StepDelay()
-    newStep = 10 * step.Get() + newStep
-
-    if newStep > 99
-      newStep = digit
-    endif
-  endif
-
-  if newStep < 1
-    newStep = 1
-  endif
-
-  step.Set(newStep)
-enddef
-
 # NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
 def SliderView(
     rstate:      State,
@@ -972,17 +1008,6 @@ def SliderView(
     Set(newValue)
   })
 
-  sliderView.OnKeyPress('0', () => SetStep(rstate.step, 0))
-  sliderView.OnKeyPress('1', () => SetStep(rstate.step, 1))
-  sliderView.OnKeyPress('2', () => SetStep(rstate.step, 2))
-  sliderView.OnKeyPress('3', () => SetStep(rstate.step, 3))
-  sliderView.OnKeyPress('4', () => SetStep(rstate.step, 4))
-  sliderView.OnKeyPress('5', () => SetStep(rstate.step, 5))
-  sliderView.OnKeyPress('6', () => SetStep(rstate.step, 6))
-  sliderView.OnKeyPress('7', () => SetStep(rstate.step, 7))
-  sliderView.OnKeyPress('8', () => SetStep(rstate.step, 8))
-  sliderView.OnKeyPress('9', () => SetStep(rstate.step, 9))
-
   sliderView.OnMouseEvent(kLeftClickKey, (_, col) => {
     var value = (width + gutterWidth + 6) * col
     echo col width range gutterWidth value
@@ -1000,11 +1025,11 @@ def SliderView(
 enddef
 # }}}
 # ColorInfoView {{{
-def ColorInfoView(reactiveState: State): View
+def ColorInfoView(rstate: State): View
   return ReactiveView.new(() => {
-    var hiGroup = reactiveState.hiGroup.Get()
-    var fgBgSp  = reactiveState.fgBgSp.Get()
-    var color   = reactiveState.color.Get()
+    var hiGroup = rstate.hiGroup.Get()
+    var fgBgSp  = rstate.fgBgSp.Get()
+    var color   = rstate.color.Get()
 
     var altColor    = AltColor(hiGroup, fgBgSp)
     var approxCol   = libcolor.Approximate(color)
@@ -1046,11 +1071,12 @@ enddef
 # }}}
 # ColorSliceView {{{
 def ColorSliceView(
-    paletteRef: react.Property,
-    from:       number,
-    to:         number,
-    hasHeader:  bool = true,
-    ): View
+    rstate:    State,
+    colorSet:  react.Property,
+    from:      number,
+    to:        number,
+    hasHeader: bool = true,
+    ):         View
     #   #
     #  # A view of a segment of a color palette as a strip of colored cells:
     # #
@@ -1062,7 +1088,7 @@ def ColorSliceView(
   const gutter      = react.Property.new(Config.Gutter())
 
   var sliceView = ReactiveView.new(() => {
-    var palette: list<string> = paletteRef.Get()
+    var palette: list<string> = colorSet.Get()
 
     if from >= len(palette)
       return []
@@ -1091,6 +1117,7 @@ def ColorSliceView(
       # TODO: use hlset()?
       execute $'hi {textProp} guibg={hexCol} ctermbg={approx.xterm}'
 
+      # TODO: get bufnr from rstate and set buffer-specific property types
       prop_type_delete(textProp)
       prop_type_add(textProp, {highlight: textProp})
 
@@ -1101,6 +1128,33 @@ def ColorSliceView(
     return content
   })
   .Focusable(true)
+
+  sliceView.OnKeyPress(kChooseKey, () => {
+    var palette = colorSet.Get()
+    var n = Min(to, len(palette)) - from
+    var k = ChooseIndex(n - 1)
+
+    if 0 <= k && k <= n
+      rstate.color.Set(palette[from + k])
+    endif
+  })
+
+  sliceView.OnKeyPress(kRemoveKey, () => {
+    var palette = colorSet.Get()
+    var n = Min(to, len(palette)) - from
+    var k = ChooseIndex(n - 1)
+
+    if 0 <= k && k <= n
+      palette->remove(from + k)
+      react.Transaction(() => {
+        colorSet.Set(palette, {force: true})
+
+        if empty(palette)
+          sliceView.Focused(false)
+        endif
+      })
+    endif
+  })
 
   react.CreateEffect(() => {
     if sliceView.focused.Get()
@@ -1115,35 +1169,37 @@ enddef
 # }}}
 # ColorPaletteView {{{
 class ColorPaletteView extends VStack
-  var palette:     react.Property
-  var minHeight:   number = 0    # Minimum height in lines, excluding top blank line and title
-  var hideIfEmpty: bool   = true # Collapse view if there are no colors to display
+  var rstate:           State
+  var palette:          react.Property
+  var minHeight:        number = 0    # Minimum height in lines, excluding top blank line and title
+  var hideIfEmpty:      bool   = true # Collapse view if there are no colors to display
+  var numColorsPerLine: number = kNumColorsPerLine
 
   def new(
+      this.rstate,
       this.palette,
       title: string,
-      this.minHeight   = v:none,
-      this.hideIfEmpty = v:none,
-      numColorsPerLine = kNumColorsPerLine,
+      this.minHeight        = v:none,
+      this.hideIfEmpty      = v:none,
+      this.numColorsPerLine = v:none,
       )
     this.AddView(BlankView())
     this.AddView(SectionTitleView(title))
-
-    react.CreateEffect(() => { # Dynamically add slices to accommodate all the colors
-      var numColors = len(this.palette.Get())
-      var numSlices = this.NumChildren() - 2  # First two children are always blank line and title
-      var numSlots  = numSlices * numColorsPerLine
-
-      while numSlots < numColors
-        this.AddView(
-          ColorSliceView(this.palette, numSlots, numSlots + numColorsPerLine)
-        )
-        numSlots += numColorsPerLine
-      endwhile
-    })
   enddef
 
   def Body(): ViewContent
+    # Dynamically add slices to accommodate all the colors
+    var numColors = len(this.palette.Get())
+    var numSlices = this.NumChildren() - 2  # First two children are always blank line and title
+    var numSlots  = numSlices * this.numColorsPerLine
+
+    while numSlots < numColors
+      this.AddView(
+        ColorSliceView(this.rstate, this.palette, numSlots, numSlots + this.numColorsPerLine)
+      )
+      numSlots += this.numColorsPerLine
+    endwhile
+
     var body   = super.Body()
     var height = len(body) - 2 # Do not count blank line and title
 
@@ -1162,7 +1218,7 @@ endclass
 # RgbSliderView {{{
 def RgbSliderView(rstate: State): View
   return VStack.new([
-    SliderView(rstate, 'R', rstate.red,   rstate.SetRed).Focused(true),
+    SliderView(rstate, 'R', rstate.red,   rstate.SetRed),
     SliderView(rstate, 'G', rstate.green, rstate.SetGreen),
     SliderView(rstate, 'B', rstate.blue,  rstate.SetBlue),
   ])
@@ -1171,7 +1227,7 @@ enddef
 # HsbSliderView {{{
 def HsbSliderView(rstate: State): View
   return VStack.new([
-    SliderView(rstate, 'H', rstate.hue,        rstate.SetHue,        359).Focused(true),
+    SliderView(rstate, 'H', rstate.hue,        rstate.SetHue,        359),
     SliderView(rstate, 'S', rstate.saturation, rstate.SetSaturation, 100),
     SliderView(rstate, 'B', rstate.brightness, rstate.SetBrightness, 100),
   ])
@@ -1181,7 +1237,7 @@ enddef
 def GrayscaleSliderView(rstate: State): View
   return VStack.new([
     GrayscaleSectionView(),
-    SliderView(rstate, 'G', rstate.gray, rstate.SetGrayLevel).Focused(true),
+    SliderView(rstate, 'G', rstate.gray, rstate.SetGrayLevel),
   ])
 enddef
 # }}}
@@ -1193,9 +1249,13 @@ def StylePickerView(rstate: State, MakeSlidersView: func(State): View): View
     StepView(rstate),
     ColorInfoView(rstate),
     QuotationView(),
-    ColorPaletteView.new(rstate.recent,   'Recent Colors', 2, false),
-    ColorPaletteView.new(rstate.favorite, 'Favorite Colors'),
+    ColorPaletteView.new(rstate, rstate.recent,   'Recent Colors', 2, false),
+    ColorPaletteView.new(rstate, rstate.favorite, 'Favorite Colors'),
   ])
+  stylePickerView.OnKeyPress(kUpKey,                stylePickerView.FocusPrevious)
+  stylePickerView.OnKeyPress(kDownKey,              stylePickerView.FocusNext)
+  stylePickerView.OnKeyPress(kTopKey,               stylePickerView.FocusFirst)
+  stylePickerView.OnKeyPress(kBotKey,               stylePickerView.FocusLast)
   stylePickerView.OnKeyPress(kFgBgSpKey,            () => rstate.fgBgSp.Set(kFgBgSp[rstate.fgBgSp.Get()]))
   stylePickerView.OnKeyPress(kSpBgFgKey,            () => rstate.fgBgSp.Set(kSpBgFg[rstate.fgBgSp.Get()]))
   stylePickerView.OnKeyPress(kToggleBoldKey,        () => rstate.style.ToggleAttribute('bold'))
@@ -1208,6 +1268,48 @@ def StylePickerView(rstate: State, MakeSlidersView: func(State): View): View
   stylePickerView.OnKeyPress(kToggleUnderdottedKey, () => rstate.style.ToggleAttribute('underdotted'))
   stylePickerView.OnKeyPress(kToggleUnderdoubleKey, () => rstate.style.ToggleAttribute('underdouble'))
   stylePickerView.OnKeyPress(kToggleUnderlineKey,   () => rstate.style.ToggleAttribute('underline'))
+  stylePickerView.OnKeyPress('0',                   () => rstate.SetStep(0))
+  stylePickerView.OnKeyPress('1',                   () => rstate.SetStep(1))
+  stylePickerView.OnKeyPress('2',                   () => rstate.SetStep(2))
+  stylePickerView.OnKeyPress('3',                   () => rstate.SetStep(3))
+  stylePickerView.OnKeyPress('4',                   () => rstate.SetStep(4))
+  stylePickerView.OnKeyPress('5',                   () => rstate.SetStep(5))
+  stylePickerView.OnKeyPress('6',                   () => rstate.SetStep(6))
+  stylePickerView.OnKeyPress('7',                   () => rstate.SetStep(7))
+  stylePickerView.OnKeyPress('8',                   () => rstate.SetStep(8))
+  stylePickerView.OnKeyPress('9',                   () => rstate.SetStep(9))
+
+  stylePickerView.OnKeyPress(kAddToFavoritesKey, () => {
+    var color    = rstate.color.Get()
+    var favorite = rstate.favorite.Get()
+
+    if color->NotIn(favorite)
+      favorite->add(color)
+      rstate.favorite.Set(favorite, {force: true})
+    endif
+  })
+
+  stylePickerView.OnKeyPress(kSetColorKey, () => {
+    var color = Config.ColorMode() == 'gui' ? ChooseGuiColor() : ChooseTermColor()
+
+    if !empty(color)
+      rstate.color.Set(color)
+    endif
+  })
+
+  stylePickerView.OnKeyPress(kSetHiGroupKey, () => {
+    var hiGroup = ChooseHiGroup()
+
+    if !empty(hiGroup)
+      UntrackCursorAutoCmd()
+      rstate.hiGroup.Set(hiGroup)
+    endif
+  })
+
+  stylePickerView.OnKeyPress(kClearKey, () => {
+    rstate.color.Set('NONE')
+    # Notification(winID, $'[{FgBgS()}] Color cleared')
+  })
 
   return stylePickerView
 enddef
@@ -1248,7 +1350,7 @@ def HelpView(): View
     KeySymbol(kAddToFavoritesKey),    # 30
     KeySymbol(kYankKey),              # 31
     KeySymbol(kRemoveKey),            # 32
-    KeySymbol(kPickKey),              # 33
+    KeySymbol(kChooseKey),            # 33
   ]
   var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
 
@@ -1291,7 +1393,6 @@ enddef
 # }}}
 # UI {{{
 class UI
-  var focusView: View = StaticView.new([]) # View with current focus
   var rootView: react.ComputedProperty
   var rstate: State
 
@@ -1302,13 +1403,6 @@ class UI
     var helpView      = HelpView()
 
     this.SetPane(initialPane)
-
-    rgbView.OnKeyPress(kUpKey,         this.FocusPrevious)
-    rgbView.OnKeyPress(kDownKey,       this.FocusNext)
-    hsbView.OnKeyPress(kUpKey,         this.FocusPrevious)
-    hsbView.OnKeyPress(kDownKey,       this.FocusNext)
-    grayscaleView.OnKeyPress(kUpKey,   this.FocusPrevious)
-    grayscaleView.OnKeyPress(kDownKey, this.FocusNext)
 
     this.rootView = react.ComputedProperty.new(() => {
       var pane = this.GetPane()
@@ -1326,15 +1420,17 @@ class UI
       endif
     }, {force: true})
 
-    react.CreateEffect(() => { # Set the focus when the root view changes
-      var view = this.rootView.Get()
-
-      while !view.focused.value
-        view = view.Next()
-      endwhile
-
-      this.focusView = view
+    react.CreateEffect(() => { # Reset the focus when the root view changes
+      this.rootView.Get().FocusFirst()
     })
+  enddef
+
+  def RootView(): View
+    return this.rootView.Get()
+  enddef
+
+  def ViewWithFocus(): View
+    return this.rootView.Get().SubViewWithFocus()
   enddef
 
   def SetPane(pane: string)
@@ -1343,38 +1439,6 @@ class UI
 
   def GetPane(): string
     return this.rstate.pane.Get()
-  enddef
-
-  def FocusPrevious()
-    react.Transaction(() => {
-      this.focusView.Focused(false)
-
-      while true
-        this.focusView = this.focusView.Previous()
-
-        if this.focusView.focusable && !empty(this.focusView.Body())
-          break
-        endif
-      endwhile
-
-      this.focusView.Focused(true)
-    })
-  enddef
-
-  def FocusNext()
-    react.Transaction(() => {
-      this.focusView.Focused(false)
-
-      while true
-        this.focusView = this.focusView.Next()
-
-        if this.focusView.focusable && !empty(this.focusView.Body())
-          break
-        endif
-      endwhile
-
-      this.focusView.Focused(true)
-    })
   enddef
 endclass
 # }}}
@@ -1400,58 +1464,52 @@ sWinID = -1
 enddef
 
 def MakeEventHandler(ui: UI): func(number, string): bool
-return (winid: number, rawKeyCode: string): bool => {
-  var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
+  return (winid: number, rawKeyCode: string): bool => {
+    var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
-  if keyCode == kCancelKey
-    Cancel(winid)
-    return true
-  endif
-
-  if keyCode == kCloseKey
-    popup_close(winid)
-    return true
-  endif
-
-  if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
-    ui.SetPane(keyCode)
-    return true
-  endif
-
-  if keyCode == "\<LeftMouse>"
-    var mousepos = getmousepos()
-
-    if mousepos.winid != winid
-      return false
+    if keyCode == kCancelKey
+      Cancel(winid)
+      return true
     endif
 
-    return ui.rootView.Get().RespondToMouseEvent(keyCode, mousepos.line, mousepos.column)
-  endif
+    if keyCode == kCloseKey
+      popup_close(winid)
+      return true
+    endif
 
-  return ui.focusView.RespondToKeyEvent(keyCode)
-}
+    if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
+      ui.SetPane(keyCode)
+      return true
+    endif
+
+    if keyCode == kToggleTrackingKey
+      ToggleTrackCursor()
+    endif
+
+    if keyCode == "\<LeftMouse>"
+      var mousepos = getmousepos()
+
+      if mousepos.winid != winid
+        return false
+      endif
+
+      return ui.RootView().RespondToMouseEvent(keyCode, mousepos.line, mousepos.column)
+    endif
+
+    return ui.ViewWithFocus().RespondToKeyEvent(keyCode)
+  }
 enddef
 # }}}
 # Style Picker Popup {{{
-def StylePickerPopup(
-    hiGroup:         string,
-    xPos:            number,
-    yPos:            number,
-    zIndex:          number       = Config.ZIndex(),
-    bg:              string       = Config.Background(),
-    borderChars:     list<string> = Config.BorderChars(),
-    minWidth:        number       = Config.PopupWidth(),
-    allowKeyMapping: bool         = Config.AllowKeyMapping(),
-    favoritePath:    string       = Config.FavoritePath()
-    ): number
+def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   var _hiGroup      = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
-  var reactiveState = State.new(_hiGroup, 'fg', favoritePath)
-  var ui            = UI.new(reactiveState)
+  var rstate        = State.new(_hiGroup, 'fg')
+  var ui            = UI.new(rstate)
   var EventHandler  = MakeEventHandler(ui)
 
   var winid         = popup_create('', {
     border:      [1, 1, 1, 1],
-    borderchars: borderChars,
+    borderchars: Config.BorderChars(),
     callback:    ClosedCallback,
     close:       'button',
     col:         xPos,
@@ -1460,10 +1518,10 @@ def StylePickerPopup(
     filter:      EventHandler,
     filtermode:  'n',
     hidden:      true,
-    highlight:   bg,
+    highlight:   Config.Background(),
     line:        yPos,
-    mapping:     allowKeyMapping,
-    minwidth:    minWidth,
+    mapping:     Config.AllowKeyMapping(),
+    minwidth:    Config.PopupWidth(),
     padding:     [0, 1, 0, 1],
     pos:         'topleft',
     resize:      false,
@@ -1471,9 +1529,10 @@ def StylePickerPopup(
     tabpage:     0,
     title:       '',
     wrap:        false,
-    zindex:      zIndex,
+    zindex:      Config.ZIndex(),
   })
   var bufnr = winbufnr(winid)
+  echo bufnr
 
   InitHighlight()
   InitTextPropertyTypes(bufnr)
@@ -1484,7 +1543,7 @@ def StylePickerPopup(
 
   react.CreateEffect(() => {
     prop_type_change(kPropTypeCurrentHighlight,
-      {bufnr: bufnr, highlight: reactiveState.hiGroup.Get()}
+      {bufnr: bufnr, highlight: rstate.hiGroup.Get()}
     )
   })
 
