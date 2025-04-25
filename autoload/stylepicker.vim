@@ -899,19 +899,17 @@ def HeaderView(rstate: State, pane: string): View
   return ReactiveView.new(() => {
     if rstate.pane.Get() == pane
       var hiGroup = rstate.hiGroup.Get()
-      var fgBgSp  = rstate.fgBgSp.Get()
       var style   = rstate.style.Get()
-      var spaces  = repeat(' ', width - strcharlen(hiGroup) - strcharlen(fgBgSp) - strcharlen(attrs) - 3)
-      var text    = $"[{fgBgSp}] {hiGroup}{spaces}{attrs}"
+      var text    = $'BIUVSK [{rstate.fgBgSp.Get()}] {hiGroup}'
 
       return [TextLine.new(text)
-        ->WithTitle(0, strcharlen(hiGroup) + strcharlen(fgBgSp) + 3)
-        ->WithState(style.bold,          offset,     offset + 1)
-        ->WithState(style.italic,        offset + 1, offset + 2)
-        ->WithState(style.underline,     offset + 2, offset + 3)
-        ->WithState(style.reverse,       offset + 3, offset + 4)
-        ->WithState(style.standout,      offset + 4, offset + 5)
-        ->WithState(style.strikethrough, offset + 5, offset + 6),
+        ->WithState(style.bold,          0, 1)
+        ->WithState(style.italic,        1, 2)
+        ->WithState(style.underline,     2, 3)
+        ->WithState(style.reverse,       3, 4)
+        ->WithState(style.standout,      4, 5)
+        ->WithState(style.strikethrough, 5, 6)
+        ->WithTitle(7, 12 + strcharlen(hiGroup)),
         BlankLine(),
       ]
     endif
