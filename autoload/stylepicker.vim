@@ -131,17 +131,21 @@ var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''      
 var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
 var marker:          string       = get(g:, 'stylepicker_marker',       ascii ? '>> ' : '❯❯ '                   )
 var quotes:          list<string> = get(g:, 'stylepicker_quotes',       kDefaultQuotes                          )
-var recent:          number       = get(g:, 'stylepicker_recent',       20                                      )
+var num_recent:      number       = get(g:, 'stylepicker_num_recent',   20                                      )
+var recentpath:      string       = get(g:, 'stylepicker_recentpath',   ''                                      )
 var star:            string       = get(g:, 'stylepicker_star',         ascii ? '*' : '★'                       )
 var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',    1.0                                     )
 var zindex:          number       = get(g:, 'stylepicker_zindex',       50                                      )
 # }}}
 # Internal State {{{
-var sHiGroup: react.Property # Reference to the current highlight group for autocommands
-var sX:       number         = 0  # Horizontal position of the style picker
-var sY:       number         = 0  # Vertical position of the style picker
+var sHiGroup:  react.Property                          # Reference to the current highlight group for autocommands
+var sX:        number         = 0                      # Horizontal position of the style picker
+var sY:        number         = 0                      # Vertical position of the style picker
+var sRecent:   react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
+var sFavorite: react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
 
 class Config
+  static var AllowKeyMapping = () => allowkeymapping
   static var Ascii           = () => ascii
   static var Background      = () => background
   static var BorderChars     = () => borderchars
@@ -150,15 +154,15 @@ class Config
   static var Gutter          = () => repeat(' ', strcharlen(marker))
   static var GutterWidth     = () => strcharlen(marker)
   static var KeyAliases      = () => keyaliases
-  static var AllowKeyMapping = () => allowkeymapping
   static var Marker          = () => marker
+  static var NumRecent       = () => num_recent
   static var PopupWidth      = () => max([39 + strdisplaywidth(marker), 42])
   static var RandomQuotation = () => quotes[rand() % len(quotes)]
-  static var Recent          = () => recent
+  static var RecentPath      = () => recentpath
   static var SliderSymbols   = () => ascii ? kAsciiSliderSymbols : kSliderSymbols
   static var Star            = () => star
-  static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
   static var StepDelay       = () => stepdelay
+  static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
   static var ZIndex          = () => zindex
 endclass
 # }}}
@@ -609,15 +613,14 @@ class State
   #  # The reactive state of this script.
   # #
   ##
-  var hiGroup: react.Property # The current highlight group
-  var fgBgSp:  react.Property # The current color attribute ('fg', 'bg', or 'sp')
-  var color:   ColorProperty  # The hex value of the current color
-  var style:   StyleProperty  # The current style attributes (bold, italic, etc.)
+  var hiGroup:  react.Property # The current highlight group
+  var fgBgSp:   react.Property # The current color attribute ('fg', 'bg', or 'sp')
+  var recent:   react.Property # List of recent colors
+  var favorite: react.Property # List of favorite colors
+  var color:    ColorProperty  # The hex value of the current color
+  var style:    StyleProperty  # The current style attributes (bold, italic, etc.)
 
   var step     = react.Property.new(1)           # Current increment/decrement step
-  # FIXME: persist recent color across open/close
-  var recent   = react.Property.new([])          # List of recent colors
-  var favorite = react.Property.new([])          # List of favorite colors
   var pane     = react.Property.new(kRgbPaneKey) # Current pane (rgb, hsb, grayscale, help)
   var rgb      = react.Property.new([0, 0, 0])
   var red      = react.Property.new(0)
@@ -642,6 +645,18 @@ class State
     this.fgBgSp  = react.Property.new(fgBgSp)
     this.color   = ColorProperty.new(this.hiGroup, this.fgBgSp)
     this.style   = StyleProperty.new(this.hiGroup)
+
+    if !empty(Config.RecentPath())
+      sRecent.Set(LoadPalette(Config.RecentPath()))
+    endif
+
+    if !empty(Config.FavoritePath())
+      sFavorite.Set(LoadPalette(Config.FavoritePath()))
+    endif
+
+    this.recent   = sRecent
+    this.favorite = sFavorite
+    sHiGroup      = this.hiGroup # Allows setting the highlight group from an autocommand
 
     react.CreateEffect(() => { # Recompute value when this.color or this.cachedHsb changes
       var color = this.color.Get()
@@ -676,12 +691,6 @@ class State
         this.SaveToRecent()
       endif
     })
-
-    if !empty(Config.FavoritePath())
-      this.favorite.Set(LoadPalette(Config.FavoritePath()))
-    endif
-
-    sHiGroup = this.hiGroup # Allow setting the highlight group from an autocommand
   enddef
 
   def SetStep(digit: number)
@@ -759,7 +768,7 @@ class State
       if color->NotIn(recentColors)
         recentColors->add(color)
 
-        if len(recentColors) > Config.Recent()
+        if len(recentColors) > Config.NumRecent()
           remove(recentColors, 0)
         endif
 
