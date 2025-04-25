@@ -557,9 +557,8 @@ class StyleProperty extends react.Property
     react.CreateEffect(() => {
       this._hiGroup = hiGroup.Get()
       var hl        = hlget(this._hiGroup, true)[0]
-      var style     = extendnew(
-        StyleProperty.styles, get(hl, 'gui', get(hl, 'cterm', {})), 'force' # FIXME: pick attributes according to mode (gui vs term)
-      )
+      var mode      = Config.StyleMode()
+      var style     = extendnew(StyleProperty.styles, get(hl, mode, {}), 'force')
 
       if style.undercurl || style.underdashed || style.underdotted || style.underdouble
         style.underline = true
@@ -571,8 +570,9 @@ class StyleProperty extends react.Property
 
   def Set(value: dict<bool>, args: dict<any> = {})
     var style = filter(value, (_, v) => v)
+    var mode  = Config.StyleMode()
 
-    hlset([{name: this._hiGroup, gui: style, cterm: style}])
+    hlset([{name: this._hiGroup, [mode]: style}])
     super.Set(extendnew(StyleProperty.styles, value, 'force'), args)
   enddef
 
