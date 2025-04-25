@@ -506,10 +506,6 @@ class ColorProperty extends react.Property
       return
     endif
 
-    if this.colorState.value == ColorState.New
-      this.colorState.Set(ColorState.Edited)
-    endif
-
     var attrs: dict<any> = {name: this._hiGroup, [this._guiAttr]: newValue}
     var newValue_ = newValue
 
@@ -521,7 +517,14 @@ class ColorProperty extends react.Property
     endif
 
     hlset([attrs])
-    super.Set(newValue_)
+
+    react.Transaction(() => {
+      if this.colorState.value == ColorState.New
+        this.colorState.Set(ColorState.Edited)
+      endif
+
+      this.Set_(newValue_)
+    })
   enddef
 
   def Set_(newValue: string)
@@ -613,6 +616,7 @@ class State
   var style:   StyleProperty  # The current style attributes (bold, italic, etc.)
 
   var step     = react.Property.new(1)           # Current increment/decrement step
+  # FIXME: persist recent color across open/close
   var recent   = react.Property.new([])          # List of recent colors
   var favorite = react.Property.new([])          # List of favorite colors
   var pane     = react.Property.new(kRgbPaneKey) # Current pane (rgb, hsb, grayscale, help)
@@ -749,20 +753,22 @@ class State
   enddef
 
   def SaveToRecent()
-    var recentColors: list<string> = this.recent.value
-    var color = this.color.Get()
+    react.Transaction(() => {
+      var recentColors: list<string> = this.recent.value
+      var color = this.color.Get()
 
-    if color->NotIn(recentColors)
-      recentColors->add(color)
+      if color->NotIn(recentColors)
+        recentColors->add(color)
 
-      if len(recentColors) > Config.Recent()
-        remove(recentColors, 0)
+        if len(recentColors) > Config.Recent()
+          remove(recentColors, 0)
+        endif
+
+        this.recent.Set(recentColors, {force: true})
       endif
 
-      this.recent.Set(recentColors, {force: true})
-    endif
-
-    this.color.colorState.Set(ColorState.Saved)
+      this.color.colorState.Set(ColorState.Saved)
+    })
   enddef
 endclass
 # }}}
@@ -906,6 +912,11 @@ def HeaderView(rstate: State, pane: string): View
   })
 enddef
 # }}}
+# FooterView {{{
+def FooterView(rstate: State): View
+  return StaticView.new([])
+enddef
+# }}}
 # SectionTitleView {{{
 def SectionTitleView(title: string): View
   #   #
@@ -978,6 +989,14 @@ def SliderView(
   })
   .Focusable(true)
 
+  react.CreateEffect(() => {
+    if sliderView.focused.Get()
+      gutter.Set(Config.Marker())
+    else
+      gutter.Set(Config.Gutter())
+    endif
+  })
+
   sliderView.OnKeyPress(kIncrementKey, () => {
     var newValue = sliderValue.Get() + rstate.step.Get()
 
@@ -1001,14 +1020,6 @@ def SliderView(
   sliderView.OnMouseEvent(kLeftClickKey, (_, col) => {
     var value = (width + gutterWidth + 6) * col
     echo col width range gutterWidth value
-  })
-
-  react.CreateEffect(() => {
-    if sliderView.focused.Get()
-      gutter.Set(Config.Marker())
-    else
-      gutter.Set(Config.Gutter())
-    endif
   })
 
   return sliderView
@@ -1272,6 +1283,7 @@ def StylePickerView(bufnr: number, pane: string, rstate: State, MakeSlidersView:
     QuotationView(),
     ColorPaletteView.new('Recent Colors',   rstate.recent,   rstate, {bufnr: bufnr, pane: pane, minHeight: 2, hide: false}),
     ColorPaletteView.new('Favorite Colors', rstate.favorite, rstate, {bufnr: bufnr, pane: pane}),
+    FooterView(rstate),
   ])
   stylePickerView.OnKeyPress(kUpKey,                stylePickerView.FocusPrevious)
   stylePickerView.OnKeyPress(kDownKey,              stylePickerView.FocusNext)
@@ -1429,10 +1441,11 @@ enddef
 # }}}
 # UI {{{
 class UI
-  var rootView = react.ComputedProperty.new(() => StaticView.new([]))
   var rstate: State
+  var rootView: react.ComputedProperty
 
   def new(this.rstate)
+    this.rootView = react.ComputedProperty.new(() => StaticView.new([]))
   enddef
 
   def Init(bufnr: number, initialPane: string)
@@ -1583,12 +1596,11 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   var counter = 0
 
   def Redraw()
-    popup_settext(winid, ui.rootView.Get().Body())
     ++counter
-    echomsg 'REDRAW' counter
+    popup_settext(winid, ui.rootView.Get().Body() + [{text: string(counter), props: []}])
   enddef
 
-  react.CreateEffect(() => Redraw())
+  react.CreateEffect(() => Redraw(), {weight: 100})
 
   popup_show(winid)
 
