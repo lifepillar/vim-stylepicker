@@ -1194,7 +1194,10 @@ def ColorSliceView(
     var k = ChooseIndex(n - 1)
 
     if 0 <= k && k <= n
-      rstate.color.Set(palette[from + k])
+      react.Transaction(() => {
+        rstate.SaveToRecent()
+        rstate.color.Set(palette[from + k])
+      })
     endif
   })
 
