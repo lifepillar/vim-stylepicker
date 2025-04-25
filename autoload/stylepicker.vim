@@ -222,9 +222,9 @@ enddef
 def Notification(
     winid:    number,
     text:     string,
-    duration: number = 2000,
-    width:    number = Config.PopupWidth(),
-    border:   number = Config.BorderChars(),
+    duration: number       = 2000,
+    width:    number       = Config.PopupWidth(),
+    border:   list<string> = Config.BorderChars(),
     )
   popup_notification(Center(text, width), {
     pos:         'topleft',
