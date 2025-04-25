@@ -497,7 +497,7 @@ class ColorProperty extends react.Property
       this._ctermAttr = 'cterm' .. CtermAttr(this._fgBgSp, 'cterm')
 
       this.colorState.Set(ColorState.New)
-      this.Set_(GetHiGroupColor(this._hiGroup, this._fgBgSp)) # `super` does not compile in a lambda
+      this.Set_(GetHiGroupColor(this._hiGroup, this._fgBgSp)) # `super` does not compile in a lambda in some Vim versions
     })
   enddef
 
@@ -1119,13 +1119,14 @@ enddef
 # }}}
 # ColorSliceView {{{
 def ColorSliceView(
-    bufnr:     number,
-    pane:      string,
-    rstate:    State,
-    colorSet:  react.Property,
-    from:      number,
-    to:        number,
-    hasHeader: bool = true,
+    identifier: string,
+    bufnr:      number,
+    pane:       string,
+    rstate:     State,
+    colorSet:   react.Property,
+    from:       number,
+    to:         number,
+    hasHeader:  bool = true,
     ):         View
   #   #
   #  # A view of a segment of a color palette as a strip of colored cells:
@@ -1160,7 +1161,7 @@ def ColorSliceView(
       while k < to_ - from
         var hexCol   = palette[from + k]
         var approx   = libcolor.Approximate(hexCol)
-        var textProp = $'stylePickerPalette_{hexCol[1 : ]}_{k}' # FIXME: optimize name
+        var textProp = $'stylePicker{identifier}_{from + k}'
         var column   = gutterWidth + 4 * k
 
         colorsLine->WithStyle(textProp, column, column + 3)
@@ -1222,6 +1223,7 @@ enddef
 # }}}
 # ColorPaletteView {{{
 class ColorPaletteView extends VStack
+  var identifier:       string
   var palette:          react.Property
   var rstate:           State
   var bufnr:            number
@@ -1230,7 +1232,7 @@ class ColorPaletteView extends VStack
   var hideIfEmpty:      bool   # Collapse view if there are no colors to display
   var numColorsPerLine: number # Number of colors of a slice
 
-  def new(title: string, this.palette, this.rstate, args: dict<any>)
+  def new(this.identifier, title: string, this.palette, this.rstate, args: dict<any>)
     this.bufnr            = args['bufnr']
     this.pane             = args['pane']
     this.minHeight        = args->get('minHeight', 0)
@@ -1250,7 +1252,13 @@ class ColorPaletteView extends VStack
 
       while numSlots < numColors
         this.AddView(ColorSliceView(
-          this.bufnr, this.pane, this.rstate, this.palette, numSlots, numSlots + this.numColorsPerLine
+          this.identifier,
+          this.bufnr,
+          this.pane,
+          this.rstate,
+          this.palette,
+          numSlots,
+          numSlots + this.numColorsPerLine,
         ))
         numSlots += this.numColorsPerLine
       endwhile
@@ -1281,8 +1289,8 @@ def StylePickerView(bufnr: number, pane: string, rstate: State, MakeSlidersView:
     StepView(rstate, pane),
     ColorInfoView(rstate, pane),
     QuotationView(),
-    ColorPaletteView.new('Recent Colors',   rstate.recent,   rstate, {bufnr: bufnr, pane: pane, minHeight: 2, hide: false}),
-    ColorPaletteView.new('Favorite Colors', rstate.favorite, rstate, {bufnr: bufnr, pane: pane}),
+    ColorPaletteView.new('Recent', 'Recent Colors',   rstate.recent,   rstate, {bufnr: bufnr, pane: pane, minHeight: 2, hide: false}),
+    ColorPaletteView.new('Fav',    'Favorite Colors', rstate.favorite, rstate, {bufnr: bufnr, pane: pane}),
     FooterView(rstate),
   ])
   stylePickerView.OnKeyPress(kUpKey,                stylePickerView.FocusPrevious)
