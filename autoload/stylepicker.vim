@@ -220,16 +220,16 @@ def Error(text: string)
 enddef
 
 def Notification(
-    winID: number,
-    text: string,
-    duration = 2000,
-    width = Config.PopupWidth(),
-    border = sBorder
+    winid:    number,
+    text:     string,
+    duration: number = 2000,
+    width:    number = Config.PopupWidth(),
+    border:   number = Config.BorderChars(),
     )
   popup_notification(Center(text, width), {
     pos:         'topleft',
-    line:        get(popup_getoptions(winID), 'line', 1),
-    col:         get(popup_getoptions(winID), 'col', 1),
+    line:        get(popup_getoptions(winid), 'line', 1),
+    col:         get(popup_getoptions(winid), 'col', 1),
     highlight:   'Normal',
     time:        duration,
     moved:       'any',
@@ -1289,15 +1289,15 @@ class ColorPaletteView extends VStack
 endclass
 # }}}
 # StylePickerView {{{
-def StylePickerView(bufnr: number, pane: string, rstate: State, MakeSlidersView: func(State): View): View
+def StylePickerView(winid: number, pane: string, rstate: State, MakeSlidersView: func(State): View): View
   var stylePickerView = VStack.new([
     HeaderView(rstate, pane),
     MakeSlidersView(rstate),
     StepView(rstate, pane),
     ColorInfoView(rstate, pane),
     QuotationView(),
-    ColorPaletteView.new('Recent', 'Recent Colors',   rstate.recent,   rstate, {bufnr: bufnr, pane: pane, minHeight: 2, hide: false}),
-    ColorPaletteView.new('Fav',    'Favorite Colors', rstate.favorite, rstate, {bufnr: bufnr, pane: pane}),
+    ColorPaletteView.new('Recent', 'Recent Colors',   rstate.recent,   rstate, {bufnr: winbufnr(winid), pane: pane, minHeight: 2, hide: false}),
+    ColorPaletteView.new('Fav',    'Favorite Colors', rstate.favorite, rstate, {bufnr: winbufnr(winid), pane: pane}),
     FooterView(rstate),
   ])
   stylePickerView.OnKeyPress(kUpKey,                stylePickerView.FocusPrevious)
@@ -1346,7 +1346,7 @@ def StylePickerView(bufnr: number, pane: string, rstate: State, MakeSlidersView:
 
   stylePickerView.OnKeyPress(kClearKey, () => {
     rstate.color.Set('NONE')
-  # Notification(winID, $'[{FgBgS()}] Color cleared')
+    Notification(winid, 'Color cleared')
   })
 
   return stylePickerView
@@ -1463,13 +1463,13 @@ class UI
     this.rootView = react.ComputedProperty.new(() => StaticView.new([]))
   enddef
 
-  def Init(bufnr: number, initialPane: string)
+  def Init(winid: number, initialPane: string)
     InitHighlight()
-    InitTextPropertyTypes(bufnr)
+    InitTextPropertyTypes(winbufnr(winid))
 
-    var rgbView       = StylePickerView(bufnr, kRgbPaneKey,  this.rstate, RgbSliderView)
-    var hsbView       = StylePickerView(bufnr, kHsbPaneKey,  this.rstate, HsbSliderView)
-    var grayscaleView = StylePickerView(bufnr, kGrayPaneKey, this.rstate, GrayscaleSliderView)
+    var rgbView       = StylePickerView(winid, kRgbPaneKey,  this.rstate, RgbSliderView)
+    var hsbView       = StylePickerView(winid, kHsbPaneKey,  this.rstate, HsbSliderView)
+    var grayscaleView = StylePickerView(winid, kGrayPaneKey, this.rstate, GrayscaleSliderView)
     var helpView      = HelpView()
 
     this.rstate.pane.Set(initialPane)
@@ -1590,9 +1590,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     wrap:        false,
     zindex:      Config.ZIndex(),
   })
-  var bufnr = winbufnr(winid)
-
-  ui.Init(bufnr, kRgbPaneKey)
+  ui.Init(winid, kRgbPaneKey)
 
   if empty(hiGroup)
     TrackCursorAutoCmd()
@@ -1600,7 +1598,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
 
   react.CreateEffect(() => {
     prop_type_change(kPropTypeCurrentHighlight,
-      {bufnr: bufnr, highlight: rstate.hiGroup.Get()}
+      {bufnr: winbufnr(winid), highlight: rstate.hiGroup.Get()}
     )
   })
 
