@@ -138,7 +138,6 @@ var zindex:          number       = get(g:, 'stylepicker_zindex',       50      
 # }}}
 # Internal State {{{
 var sHiGroup: react.Property # Reference to the current highlight group for autocommands
-var sWinID:   number         = -1 # ID of the style picker popup
 var sX:       number         = 0  # Horizontal position of the style picker
 var sY:       number         = 0  # Vertical position of the style picker
 
@@ -281,7 +280,7 @@ def CtermAttr(attr: string, mode: string): string
   #  # Vim does not have "ctermsp", but "ctermul". Since internally, this
   # #  script always uses "sp", the attribute's name must be converted for
   ##   cterm attributes.
-if attr == 'sp' && mode == 'cterm'
+  if attr == 'sp' && mode == 'cterm'
     return 'ul'
   endif
 
@@ -859,7 +858,7 @@ enddef
 def UntrackCursorAutoCmd()
   if exists('#StylePicker')
     autocmd! StylePicker CursorMoved *
-  endif
+      endif
 enddef
 
 def ToggleTrackCursor()
@@ -1339,7 +1338,7 @@ def StylePickerView(bufnr: number, pane: string, rstate: State, MakeSlidersView:
 
   stylePickerView.OnKeyPress(kClearKey, () => {
     rstate.color.Set('NONE')
-    # Notification(winID, $'[{FgBgS()}] Color cleared')
+  # Notification(winID, $'[{FgBgS()}] Color cleared')
   })
 
   return stylePickerView
@@ -1498,24 +1497,20 @@ class UI
 endclass
 # }}}
 # Actions {{{
-def Cancel(winid: number): bool
-popup_close(winid)
+def Cancel(winid: number)
+  popup_close(winid)
 
-# TODO: revert only the changes of the stylepicker
-if exists('g:colors_name') && !empty('g:colors_name')
-  execute 'colorscheme' g:colors_name
-endif
-
-return true
+  # TODO: revert only the changes of the stylepicker
+  if exists('g:colors_name') && !empty('g:colors_name')
+    execute 'colorscheme' g:colors_name
+  endif
 enddef
 # }}}
 # Event Handling {{{
 def ClosedCallback(winid: number, result: any = '')
   DisableAllAutocommands()
-
-  sX     = popup_getoptions(winid).col
-  sY     = popup_getoptions(winid).line
-  sWinID = -1
+  sX = popup_getoptions(winid).col
+  sY = popup_getoptions(winid).line
 enddef
 
 def MakeEventHandler(ui: UI): func(number, string): bool
@@ -1617,11 +1612,6 @@ enddef
 # }}}
 # Public Interface {{{
 export def Open(hiGroup = '')
-  if sWinID > 0 # FIXME: && the popup still exists
-    popup_show(sWinID)
-    return
-  endif
-
-  sWinID = StylePickerPopup(hiGroup, sX, sY)
+  StylePickerPopup(hiGroup, sX, sY)
 enddef
 # }}}
