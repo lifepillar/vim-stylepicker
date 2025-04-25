@@ -329,9 +329,9 @@ def GetHiGroupColor(
     hiGroup: string, fgBgSp: string, colorMode: string = Config.ColorMode()
     ): string
   #   # Try hard to determine a sensible hex value for the requested
-  #  #  color attribute. Always prefer the GUI definition if it exists,
-  # #   otherwise infer a hex value in other ways.
-  ##    Always returns a hex color value.
+  #  # color attribute. Always prefer the GUI definition if it exists,
+  # # regardless of current mode (GUI vs terminal), otherwise infer
+  ## a hex value in other ways. Always returns a hex color value.
   var value = HiGroupColorValue(hiGroup, fgBgSp, 'gui') # Try to get a GUI color
 
   if value != 'NONE' # Fast path
@@ -347,7 +347,7 @@ def GetHiGroupColor(
     if ctermValue != 'NONE'
       var hex = libcolor.ColorNumber2Hex(str2nr(ctermValue))
 
-      # Enable fast path for future calls (TODO: check for side effects)
+      # Enable fast path for future calls
       execute 'hi' hiGroup $'gui{fgBgSp}={hex}'
 
       return hex
@@ -1174,7 +1174,6 @@ def ColorSliceView(
 
         colorsLine->WithStyle(textProp, column, column + 3)
 
-        # TODO: use hlset()?
         execute $'hi {textProp} guibg={hexCol} ctermbg={approx.xterm}'
 
         prop_type_delete(textProp, {bufnr: bufnr})
