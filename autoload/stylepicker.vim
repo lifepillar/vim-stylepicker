@@ -219,13 +219,11 @@ def Error(text: string)
   Msg(text, 'Error')
 enddef
 
-def Notification(
-    winid:    number,
-    text:     string,
-    duration: number       = 2000,
-    width:    number       = Config.PopupWidth(),
-    border:   list<string> = Config.BorderChars(),
-    )
+def Notification(winid: number, text: string, opts: dict<any> = {})
+  var duration = opts->get('duration', 2000)
+  var width    = opts->get('width',    strcharlen(text))
+  var border   = opts->get('border',   Config.BorderChars())
+
   popup_notification(Center(text, width), {
     pos:         'topleft',
     line:        get(popup_getoptions(winid), 'line', 1),
@@ -638,6 +636,8 @@ class State
   var saturation = react.Property.new(-1)
   var brightness = react.Property.new(-1)
 
+  public var winid    = 0  # StylePicker window ID
+
   var _timeSinceLastDigitPressed: list<number> = reltime() # Time since last digit key was pressed
 
   def new(hiGroup: string, fgBgSp: string)
@@ -920,7 +920,11 @@ enddef
 # }}}
 # FooterView {{{
 def FooterView(rstate: State): View
-  return StaticView.new([])
+  return ReactiveView.new(() => {
+    return [
+      BlankLine(),
+    ]
+  })
 enddef
 # }}}
 # SectionTitleView {{{
@@ -1188,6 +1192,21 @@ def ColorSliceView(
   })
   .Focusable(true)
 
+  sliceView.OnKeyPress(kYankKey, () => {
+    var palette = colorSet.Get()
+    var n = Min(to, len(palette)) - from
+    var k = ChooseIndex(n - 1)
+
+    if 0 <= k && k <= n
+      react.Transaction(() => {
+        var color = palette[from + k]
+        setreg(v:register, color)
+        feedkeys("\<esc>")
+        Notification(rstate.winid, $'{color} yanked into register {v:register}')
+      })
+    endif
+  })
+
   sliceView.OnKeyPress(kChooseKey, () => {
     var palette = colorSet.Get()
     var n = Min(to, len(palette)) - from
@@ -1290,15 +1309,29 @@ class ColorPaletteView extends VStack
 endclass
 # }}}
 # StylePickerView {{{
-def StylePickerView(winid: number, pane: string, rstate: State, MakeSlidersView: func(State): View): View
+def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): View): View
+  var bufnr = winbufnr(rstate.winid)
+
   var stylePickerView = VStack.new([
     HeaderView(rstate, pane),
     MakeSlidersView(rstate),
     StepView(rstate, pane),
     ColorInfoView(rstate, pane),
     QuotationView(),
-    ColorPaletteView.new('Recent', 'Recent Colors',   rstate.recent,   rstate, {bufnr: winbufnr(winid), pane: pane, minHeight: 2, hide: false}),
-    ColorPaletteView.new('Fav',    'Favorite Colors', rstate.favorite, rstate, {bufnr: winbufnr(winid), pane: pane}),
+    ColorPaletteView.new(
+      'Recent',
+      'Recent Colors',
+      rstate.recent,
+      rstate,
+      {bufnr: bufnr, pane: pane, minHeight: 2, hide: false}
+    ),
+    ColorPaletteView.new(
+      'Fav',
+      'Favorite Colors',
+      rstate.favorite,
+      rstate,
+      {bufnr: bufnr, pane: pane}
+    ),
     FooterView(rstate),
   ])
   stylePickerView.OnKeyPress(kUpKey,                stylePickerView.FocusPrevious)
@@ -1317,6 +1350,26 @@ def StylePickerView(winid: number, pane: string, rstate: State, MakeSlidersView:
   stylePickerView.OnKeyPress(kToggleUnderdottedKey, () => rstate.style.ToggleAttribute('underdotted'))
   stylePickerView.OnKeyPress(kToggleUnderdoubleKey, () => rstate.style.ToggleAttribute('underdouble'))
   stylePickerView.OnKeyPress(kToggleUnderlineKey,   () => rstate.style.ToggleAttribute('underline'))
+
+  stylePickerView.OnKeyPress(kYankKey, () => {
+    var color = rstate.color.Get()
+    setreg(v:register, color)
+    feedkeys("\<esc>") # Clear partial command (is there a better way?)
+    Notification(rstate.winid, $'{color} yanked into register {v:register}')
+  })
+
+  stylePickerView.OnKeyPress(kPasteKey, () => {
+    var what = getreg(v:register)
+
+    feedkeys("\<esc>") # Clear partial command
+
+    if what =~ '#\?[0-9a-fA-F]\{6}'
+      rstate.SaveToRecent()
+      rstate.color.Set(what)
+    else
+      Notification(rstate.winid, $'@{v:register} does not contain a valid color')
+    endif
+  })
 
   stylePickerView.OnKeyPress(kAddToFavoritesKey, () => {
     var color    = rstate.color.Get()
@@ -1347,7 +1400,7 @@ def StylePickerView(winid: number, pane: string, rstate: State, MakeSlidersView:
 
   stylePickerView.OnKeyPress(kClearKey, () => {
     rstate.color.Set('NONE')
-    Notification(winid, 'Color cleared')
+    Notification(rstate.winid, 'Color cleared')
   })
 
   return stylePickerView
@@ -1467,10 +1520,11 @@ class UI
   def Init(winid: number, initialPane: string)
     InitHighlight()
     InitTextPropertyTypes(winbufnr(winid))
+    this.rstate.winid = winid
 
-    var rgbView       = StylePickerView(winid, kRgbPaneKey,  this.rstate, RgbSliderView)
-    var hsbView       = StylePickerView(winid, kHsbPaneKey,  this.rstate, HsbSliderView)
-    var grayscaleView = StylePickerView(winid, kGrayPaneKey, this.rstate, GrayscaleSliderView)
+    var rgbView       = StylePickerView(kRgbPaneKey,  this.rstate, RgbSliderView)
+    var hsbView       = StylePickerView(kHsbPaneKey,  this.rstate, HsbSliderView)
+    var grayscaleView = StylePickerView(kGrayPaneKey, this.rstate, GrayscaleSliderView)
     var helpView      = HelpView()
 
     this.rstate.pane.Set(initialPane)
@@ -1496,34 +1550,7 @@ class UI
     })
   enddef
 
-  def RootView(): View
-    return this.rootView.Get()
-  enddef
-
-  def ViewWithFocus(): View
-    return this.rootView.Get().SubViewWithFocus()
-  enddef
-endclass
-# }}}
-# Actions {{{
-def Cancel(winid: number)
-  popup_close(winid)
-
-  # TODO: revert only the changes of the stylepicker
-  if exists('g:colors_name') && !empty('g:colors_name')
-    execute 'colorscheme' g:colors_name
-  endif
-enddef
-# }}}
-# Event Handling {{{
-def ClosedCallback(winid: number, result: any = '')
-  DisableAllAutocommands()
-  sX = popup_getoptions(winid).col
-  sY = popup_getoptions(winid).line
-enddef
-
-def MakeEventHandler(ui: UI): func(number, string): bool
-  return (winid: number, rawKeyCode: string): bool => {
+  def HandleEvent(winid: number, rawKeyCode: string): bool
     var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
     if keyCode == kCancelKey
@@ -1537,7 +1564,7 @@ def MakeEventHandler(ui: UI): func(number, string): bool
     endif
 
     if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
-      ui.rstate.pane.Set(keyCode)
+      this.rstate.pane.Set(keyCode)
       return true
     endif
 
@@ -1553,21 +1580,35 @@ def MakeEventHandler(ui: UI): func(number, string): bool
         return false
       endif
 
-      return ui.RootView().RespondToMouseEvent(keyCode, mousepos.line, mousepos.column)
+      return this.rootView.Get().RespondToMouseEvent(keyCode, mousepos.line, mousepos.column)
     endif
 
-    return ui.ViewWithFocus().RespondToKeyEvent(keyCode)
-  }
+    return this.rootView.Get().SubViewWithFocus().RespondToKeyEvent(keyCode)
+  enddef
+endclass
+# }}}
+# Actions {{{
+def Cancel(winid: number)
+  popup_close(winid)
+
+  # TODO: revert only the changes of the stylepicker
+  if exists('g:colors_name') && !empty('g:colors_name')
+    execute 'colorscheme' g:colors_name
+  endif
 enddef
 # }}}
+def ClosedCallback(winid: number, result: any = '')
+  DisableAllAutocommands()
+  sX = popup_getoptions(winid).col
+  sY = popup_getoptions(winid).line
+enddef
 # Style Picker Popup {{{
 def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
-  var _hiGroup     = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
-  var rstate       = State.new(_hiGroup, 'fg')
-  var ui           = UI.new(rstate)
-  var EventHandler = MakeEventHandler(ui)
+  var _hiGroup = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
+  var rstate   = State.new(_hiGroup, 'fg')
+  var ui       = UI.new(rstate)
 
-  var winid         = popup_create('', {
+  var winid    = popup_create('', {
     border:      [1, 1, 1, 1],
     borderchars: Config.BorderChars(),
     callback:    ClosedCallback,
@@ -1575,8 +1616,8 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     col:         xPos,
     cursorline:  false,
     drag:        true,
-    filter:      EventHandler,
-    filtermode:  'n',
+    filter:      ui.HandleEvent,
+    filtermode:  'no',
     hidden:      true,
     highlight:   Config.Background(),
     line:        yPos,
