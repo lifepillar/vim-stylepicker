@@ -69,6 +69,7 @@ const kBotKey               = ">"
 const kCancelKey            = "X"
 const kClearKey             = "Z"
 const kCloseKey             = "x"
+const kCollapsedPaneKey     = "_"
 const kDecrementKey         = "\<left>"
 const kDownKey              = "\<down>"
 const kFgBgSpKey            = "\<tab>"
@@ -890,6 +891,11 @@ def BlankView(height = 1, width = 0): View
   return StaticView.new(repeat([BlankLine(width)], height))
 enddef
 # }}}
+# CollapsedView {{{
+def CollapsedView(): View
+  return StaticView.new([TextLine.new('StylePicker')->WithTitle(0, 11)])
+enddef
+# }}}
 # HeaderView {{{
 def HeaderView(rstate: State, pane: string): View
   const attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
@@ -1512,6 +1518,7 @@ enddef
 class UI
   var rstate: State
   var rootView: react.ComputedProperty
+  var _reopenPane = kRgbPaneKey
 
   def new(this.rstate)
     this.rootView = react.ComputedProperty.new(() => StaticView.new([]))
@@ -1526,6 +1533,7 @@ class UI
     var hsbView       = StylePickerView(kHsbPaneKey,  this.rstate, HsbSliderView)
     var grayscaleView = StylePickerView(kGrayPaneKey, this.rstate, GrayscaleSliderView)
     var helpView      = HelpView()
+    var collapsedView = CollapsedView()
 
     this.rstate.pane.Set(initialPane)
 
@@ -1540,6 +1548,8 @@ class UI
         return hsbView
       elseif pane == kGrayPaneKey
         return grayscaleView
+      elseif pane == kCollapsedPaneKey
+        return collapsedView
       else
         return helpView
       endif
@@ -1553,6 +1563,15 @@ class UI
   def HandleEvent(winid: number, rawKeyCode: string): bool
     var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
+    if this.rstate.pane.Get() == kCollapsedPaneKey
+      if keyCode == kCollapsedPaneKey
+        this.rstate.pane.Set(this._reopenPane)
+        return true
+      endif
+
+      return false
+    endif
+
     if keyCode == kCancelKey
       Cancel(winid)
       return true
@@ -1563,8 +1582,13 @@ class UI
       return true
     endif
 
-    if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kGrayPaneKey])
+    if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kCollapsedPaneKey, kGrayPaneKey])
+      if keyCode == kCollapsedPaneKey
+        this._reopenPane = this.rstate.pane.Get()
+      endif
+
       this.rstate.pane.Set(keyCode)
+
       return true
     endif
 
@@ -1587,7 +1611,7 @@ class UI
   enddef
 endclass
 # }}}
-# Actions {{{
+# Style Picker Popup {{{
 def Cancel(winid: number)
   popup_close(winid)
 
@@ -1596,13 +1620,13 @@ def Cancel(winid: number)
     execute 'colorscheme' g:colors_name
   endif
 enddef
-# }}}
+
 def ClosedCallback(winid: number, result: any = '')
   DisableAllAutocommands()
   sX = popup_getoptions(winid).col
   sY = popup_getoptions(winid).line
 enddef
-# Style Picker Popup {{{
+
 def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   var _hiGroup = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
   var rstate   = State.new(_hiGroup, 'fg')
