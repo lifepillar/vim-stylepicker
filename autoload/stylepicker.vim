@@ -79,6 +79,7 @@ const kHelpKey              = "?"
 const kHsbPaneKey           = "H"
 const kIncrementKey         = "\<right>"
 const kLeftClickKey         = "\<leftmouse>"
+const kLeftDragKey          = "\<leftdrag>"
 const kPasteKey             = "P"
 const kChooseKey            = "\<enter>"
 const kRemoveKey            = "D"
@@ -806,6 +807,15 @@ class State
       Notification(this.winid, $'@{v:register} does not contain a valid color')
     endif
   enddef
+
+  def ChooseHiGroup()
+    var hiGroup = ChooseHiGroup()
+
+    if !empty(hiGroup)
+      UntrackCursorAutoCmd()
+      this.hiGroup.Set(hiGroup)
+    endif
+  enddef
 endclass
 # }}}
 # Text with Properties {{{
@@ -926,8 +936,9 @@ def HeaderView(rstate: State, pane: string): View
   const attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
   const width   = Config.PopupWidth()
   const offset  = width - strcharlen(attrs)
+  const styles  = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
 
-  return ReactiveView.new(() => {
+  var headerView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
       var hiGroup = rstate.hiGroup.Get()
       var style   = rstate.style.Get()
@@ -947,6 +958,20 @@ def HeaderView(rstate: State, pane: string): View
 
     return []
   })
+
+  headerView.OnMouseEvent(kLeftClickKey, (_, col) => {
+    var pos = col - 3
+
+    if pos >= 0 && pos < len(styles)
+      rstate.style.ToggleAttribute(styles[pos])
+    elseif pos >= 7 && pos <= 10
+      rstate.fgBgSp.Set(kFgBgSp[rstate.fgBgSp.Get()])
+    elseif pos >= 12 && pos <= 11 + strcharlen(rstate.hiGroup.Get())
+      rstate.ChooseHiGroup()
+    endif
+  })
+
+  return headerView
 enddef
 # }}}
 # FooterView {{{
@@ -1060,8 +1085,27 @@ def SliderView(
   })
 
   sliderView.OnMouseEvent(kLeftClickKey, (_, col) => {
-    var value = (width + gutterWidth + 6) * col
-    echo col width range gutterWidth value
+    var pos = col - gutterWidth - 9
+
+    if pos < 0 || pos >= width
+      return
+    endif
+
+    var value = max * pos / (width - 1)
+
+    Set(value)
+  })
+
+  sliderView.OnMouseEvent(kLeftDragKey, (_, col) => {
+    var pos = col - gutterWidth - 9
+
+    if pos < 0 || pos >= width
+      return
+    endif
+
+    var value = max * pos / (width - 1)
+
+    Set(value)
   })
 
   return sliderView
@@ -1152,15 +1196,13 @@ def ColorInfoView(rstate: State, pane: string): View
   })
 
   colorInfoView.OnMouseEvent(kLeftClickKey, (_, col) => {
-    var range = col - 3
+    var pos = col - 3
 
-    echo range
-
-    if (range >= 0 && range <= 2) || (range >= 8 && range <= 13) # Yank GUI color
+    if (pos >= 0 && pos <= 2) || (pos >= 8 && pos <= 13) # Yank GUI color
       rstate.Yank(rstate.color.Get())
     endif
 
-    if (range >= 4 && range <= 6) || (range >= 21 && range <= 30) # Yank cterm color
+    if (pos >= 4 && pos <= 6) || (pos >= 21 && pos <= 30) # Yank cterm color
       var approx = libcolor.Approximate(rstate.color.Get())
       rstate.Yank(approx.hex)
     endif
@@ -1290,13 +1332,13 @@ def ColorSliceView(
   })
 
   sliceView.OnMouseEvent(kLeftClickKey, (_, col) => {
-    var range = col - gutterWidth - 3
+    var pos = col - gutterWidth - 3
 
-    if range < 0 || range % 4 == 3 # Space between color swaths
+    if pos < 0 || pos % 4 == 3 # Space between color swaths
       return
     endif
 
-    var index = range / 4 + from
+    var index = pos / 4 + from
     var palette = colorSet.Get()
 
     if index < len(palette)
@@ -1442,12 +1484,7 @@ def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): V
   })
 
   stylePickerView.OnKeyPress(kSetHiGroupKey, () => {
-    var hiGroup = ChooseHiGroup()
-
-    if !empty(hiGroup)
-      UntrackCursorAutoCmd()
-      rstate.hiGroup.Set(hiGroup)
-    endif
+    rstate.ChooseHiGroup()
   })
 
   stylePickerView.OnKeyPress(kClearKey, () => {
@@ -1649,7 +1686,7 @@ class UI
       return true
     endif
 
-    if keyCode == "\<LeftMouse>"
+    if keyCode->In(["\<leftmouse>", "\<leftdrag>"])
       var mousepos = getmousepos()
 
       if mousepos.winid != winid
