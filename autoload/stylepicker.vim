@@ -1851,7 +1851,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     drag:        true,
     dragall:     true,
     filter:      ui.HandleEvent,
-    filtermode:  'no',
+    filtermode:  'n',
     hidden:      true,
     highlight:   empty(Config.Highlight()) ? 'stylePickerHighlight' : Config.Highlight(),
     line:        yPos,
