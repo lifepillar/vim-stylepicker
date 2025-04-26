@@ -1190,8 +1190,7 @@ def ColorSliceView(
 
         colorsLine->WithStyle(textProp, column, column + 3)
 
-        execute $'hi {textProp} guibg={hexCol} ctermbg={approx.xterm}'
-
+        hlset([{name: textProp, guibg: hexCol, ctermbg: string(approx.xterm)}])
         prop_type_delete(textProp, {bufnr: bufnr})
         prop_type_add(textProp, {bufnr: bufnr, highlight: textProp})
 
