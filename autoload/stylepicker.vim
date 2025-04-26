@@ -45,8 +45,8 @@ const kBorderChars        = ['─', '│', '─', '│', '╭', '╮', '╯', '�
 const kAsciiBorderChars   = ['-', '|', '-', '|', ':', ':', ':', ':']
 const kSliderSymbols      = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
 const kAsciiSliderSymbols = [" ", ".", ":", "!", "|", "/", "-", "=", "#"]
+const kDigits             = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
 const kAsciiDigits        = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-const kDigits             = []
 
 const kDefaultQuotes = [
   'Absentem edit cum ebrio qui litigat.',
@@ -127,6 +127,7 @@ const kASCIIKey = {
 var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',   true                                    )
 var ascii:           bool         = get(g:, 'stylepicker_ascii',        false                                   )
 var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ascii ? kAsciiBorderChars : kBorderChars)
+var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',   ascii ? kAsciiDigits      : kDigits     )
 var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''                                      )
 var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
 var highlight:       string       = get(g:, 'stylepicker_highlight',    ''                                      )
@@ -150,6 +151,7 @@ class Config
   static var Ascii           = () => ascii
   static var BorderChars     = () => borderchars
   static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
+  static var Digits          = () => digitchars
   static var FavoritePath    = () => favoritepath
   static var Gutter          = () => repeat(' ', strcharlen(marker))
   static var GutterWidth     = () => strcharlen(marker)
@@ -1157,6 +1159,7 @@ def ColorSliceView(
   const gutterWidth = Config.GutterWidth()
   const width       = Config.PopupWidth() - gutterWidth
   const gutter      = react.Property.new(Config.Gutter())
+  const digits      = Config.Digits()
 
   var sliceView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
@@ -1171,7 +1174,7 @@ def ColorSliceView(
 
       if hasHeader
         content->add(TextLine.new(
-          Config.Gutter() .. ' ' .. join(range(to_ - from), '   ')
+          Config.Gutter() .. ' ' .. join(digits[0 : (to_ - from - 1)], '   ')
         )->Labeled())
       endif
 
