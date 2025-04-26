@@ -1205,6 +1205,14 @@ def ColorSliceView(
   })
   .Focusable(true)
 
+  react.CreateEffect(() => {
+    if sliceView.focused.Get()
+      gutter.Set(Config.Marker())
+    else
+      gutter.Set(Config.Gutter())
+    endif
+  })
+
   sliceView.OnKeyPress(kYankKey, () => {
     var palette = colorSet.Get()
     var n = Min(to, len(palette)) - from
@@ -1250,12 +1258,19 @@ def ColorSliceView(
     endif
   })
 
-  react.CreateEffect(() => {
-    if sliceView.focused.Get()
-      gutter.Set(Config.Marker())
-    else
-      gutter.Set(Config.Gutter())
+  sliceView.OnMouseEvent(kLeftClickKey, (_, col) => {
+    var range = col - gutterWidth - 3
+
+    if range < 0 || range % 4 == 3 # Space between color swaths
+      return
     endif
+
+    var index = range / 4 + from
+    var palette = colorSet.Get()
+    var color = palette[index]
+
+    rstate.SaveToRecent()
+    rstate.color.Set(color)
   })
 
   return sliceView
