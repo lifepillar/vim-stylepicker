@@ -1267,10 +1267,15 @@ def ColorSliceView(
 
     var index = range / 4 + from
     var palette = colorSet.Get()
-    var color = palette[index]
 
-    rstate.SaveToRecent()
-    rstate.color.Set(color)
+    if index < len(palette)
+      var color = palette[index]
+
+      react.Transaction(() => {
+        rstate.SaveToRecent()
+        rstate.color.Set(color)
+      })
+    endif
   })
 
   return sliceView
