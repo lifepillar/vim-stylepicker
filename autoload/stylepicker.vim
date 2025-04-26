@@ -787,6 +787,25 @@ class State
       this.color.colorState.Set(ColorState.Saved)
     })
   enddef
+
+  def Yank(color: string)
+    setreg(v:register, color)
+    feedkeys("\<esc>") # Clear partial command (is there a better way?)
+    Notification(this.winid, $'{color} yanked into register {v:register}')
+  enddef
+
+  def PasteColor()
+    var what = getreg(v:register)
+
+    feedkeys("\<esc>") # Clear partial command
+
+    if what =~ '#\?[0-9a-fA-F]\{6}'
+      this.SaveToRecent()
+      this.color.Set(what)
+    else
+      Notification(this.winid, $'@{v:register} does not contain a valid color')
+    endif
+  enddef
 endclass
 # }}}
 # Text with Properties {{{
@@ -1094,7 +1113,7 @@ enddef
 # }}}
 # ColorInfoView {{{
 def ColorInfoView(rstate: State, pane: string): View
-  return ReactiveView.new(() => {
+  var colorInfoView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
       var hiGroup = rstate.hiGroup.Get()
       var fgBgSp  = rstate.fgBgSp.Get()
@@ -1131,6 +1150,23 @@ def ColorInfoView(rstate: State, pane: string): View
 
     return []
   })
+
+  colorInfoView.OnMouseEvent(kLeftClickKey, (_, col) => {
+    var range = col - 3
+
+    echo range
+
+    if (range >= 0 && range <= 2) || (range >= 8 && range <= 13) # Yank GUI color
+      rstate.Yank(rstate.color.Get())
+    endif
+
+    if (range >= 4 && range <= 6) || (range >= 21 && range <= 30) # Yank cterm color
+      var approx = libcolor.Approximate(rstate.color.Get())
+      rstate.Yank(approx.hex)
+    endif
+  })
+
+  return colorInfoView
 enddef
 # }}}
 # QuotationView {{{
@@ -1219,12 +1255,7 @@ def ColorSliceView(
     var k = ChooseIndex(n - 1)
 
     if 0 <= k && k <= n
-      react.Transaction(() => {
-        var color = palette[from + k]
-        setreg(v:register, color)
-        feedkeys("\<esc>")
-        Notification(rstate.winid, $'{color} yanked into register {v:register}')
-      })
+      rstate.Yank(palette[from + k])
     endif
   })
 
@@ -1385,23 +1416,11 @@ def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): V
   stylePickerView.OnKeyPress(kToggleUnderlineKey,   () => rstate.style.ToggleAttribute('underline'))
 
   stylePickerView.OnKeyPress(kYankKey, () => {
-    var color = rstate.color.Get()
-    setreg(v:register, color)
-    feedkeys("\<esc>") # Clear partial command (is there a better way?)
-    Notification(rstate.winid, $'{color} yanked into register {v:register}')
+    rstate.Yank(rstate.color.Get())
   })
 
   stylePickerView.OnKeyPress(kPasteKey, () => {
-    var what = getreg(v:register)
-
-    feedkeys("\<esc>") # Clear partial command
-
-    if what =~ '#\?[0-9a-fA-F]\{6}'
-      rstate.SaveToRecent()
-      rstate.color.Set(what)
-    else
-      Notification(rstate.winid, $'@{v:register} does not contain a valid color')
-    endif
+    rstate.PasteColor()
   })
 
   stylePickerView.OnKeyPress(kAddToFavoritesKey, () => {
