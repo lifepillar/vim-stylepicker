@@ -21,6 +21,8 @@ type View         = libui.View
 type ViewContent  = libui.ViewContent
 # }}}
 # Constants {{{
+const version = '0.0.1'
+
 const kNumColorsPerLine = 10
 
 const kUltimateFallbackColor = {
@@ -135,7 +137,7 @@ const kASCIIKey = {
 var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',    true                                        )
 var ascii:           bool         = get(g:, 'stylepicker_ascii',         false                                       )
 var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',   ascii ? kAsciiBorderChars : kBorderChars    )
-var debug:           number       = get(g:, 'stylepicker_debug',         0                                           )
+var debug:           number       = get(g:, 'stylepicker_debug',         1                                           )
 var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',    ascii ? kAsciiDigits      : kDigits         )
 var dragsymbol:      string       = get(g:, 'stylepicker_dragsymbol',    ascii ? kAsciiDragSymbol  : kDragSymbol     )
 var favoritepath:    string       = get(g:, 'stylepicker_favoritepath',  ''                                          )
@@ -240,14 +242,20 @@ def Error(text: string)
 enddef
 
 def Notification(winid: number, text: string, opts: dict<any> = {})
-  var duration = opts->get('duration', 2000)
+  var duration = opts->get('duration', 2500)
   var width    = opts->get('width',    strcharlen(text))
   var border   = opts->get('border',   Config.BorderChars())
+  var where    = popup_getpos(winid)
+  var line     = where.core_line + ((where.core_height - 3) / 2) + 1
+  var col      = where.core_col + ((where.core_width - width) / 2) - 2
+
+
+  echomsg '[' where.core_line where.core_col where.core_height where.core_width ']' line col
 
   popup_notification(Center(text, width), {
     pos:         'topleft',
-    line:        get(popup_getoptions(winid), 'line', 1),
-    col:         get(popup_getoptions(winid), 'col', 1),
+    line:        line,
+    col:         col,
     highlight:   'Normal',
     time:        duration,
     moved:       'any',
@@ -839,7 +847,7 @@ class State
   def Yank(color: string)
     setreg(v:register, color)
     feedkeys("\<esc>") # Clear partial command (is there a better way?)
-    Notification(this.winid, $'{color} yanked into register {v:register}')
+    Notification(this.winid, $'{color} yanked into register @{v:register}')
   enddef
 
   def PasteColor()
@@ -1891,7 +1899,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
 
     var debugText = [
       BlankLine().value,
-      TextLine.new(Center(string(sRedrawCount), Config.PopupWidth())).value,
+      TextLine.new($'{sRedrawCount}  winid={winid}  bufnr={winbufnr(winid)}  v{version}').value,
     ]
 
     popup_settext(winid, ui.rootView.Get().Body() + debugText)
