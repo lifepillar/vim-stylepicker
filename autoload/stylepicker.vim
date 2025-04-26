@@ -43,6 +43,10 @@ const kSpBgFg = {
 
 const kDragSymbol         = '𝌆'
 const kAsciiDragSymbol    = '='
+const kLeftTriangle       = '◀︎'
+const kRightTriangle      = '▶︎'
+const kAsciiLeftTriangle  = '<'
+const kAsciiRightTriangle = '>'
 const kBorderChars        = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
 const kAsciiBorderChars   = ['-', '|', '-', '|', ':', ':', ':', ':']
 const kSliderSymbols      = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
@@ -127,34 +131,39 @@ const kASCIIKey = {
 # }}}
 # User Settings {{{
 # TODO: export user settings
-var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',   true                                    )
-var ascii:           bool         = get(g:, 'stylepicker_ascii',        false                                   )
-var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ascii ? kAsciiBorderChars : kBorderChars)
-var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',   ascii ? kAsciiDigits      : kDigits     )
-var dragsymbol:      string       = get(g:, 'stylepicker_dragsymbol',   ascii ? kAsciiDragSymbol  : kDragSymbol )
-var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''                                      )
-var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
-var highlight:       string       = get(g:, 'stylepicker_highlight',    ''                                      )
-var marker:          string       = get(g:, 'stylepicker_marker',       ascii ? '>> ' : '❯❯ '                   )
-var quotes:          list<string> = get(g:, 'stylepicker_quotes',       kDefaultQuotes                          )
-var num_recent:      number       = get(g:, 'stylepicker_num_recent',   20                                      )
-var recentpath:      string       = get(g:, 'stylepicker_recentpath',   ''                                      )
-var star:            string       = get(g:, 'stylepicker_star',         ascii ? '*' : '★'                       )
-var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',    1.0                                     )
-var zindex:          number       = get(g:, 'stylepicker_zindex',       50                                      )
+var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',    true                                        )
+var ascii:           bool         = get(g:, 'stylepicker_ascii',         false                                       )
+var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',   ascii ? kAsciiBorderChars : kBorderChars    )
+var debug:           number       = get(g:, 'stylepicker_debug',         0                                           )
+var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',    ascii ? kAsciiDigits      : kDigits         )
+var dragsymbol:      string       = get(g:, 'stylepicker_dragsymbol',    ascii ? kAsciiDragSymbol  : kDragSymbol     )
+var favoritepath:    string       = get(g:, 'stylepicker_favoritepath',  ''                                          )
+var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',    {}                                          )
+var highlight:       string       = get(g:, 'stylepicker_highlight',     ''                                          )
+var lefttriangle:    string       = get(g:, 'stylepicker_lefttriangle',  ascii ? kAsciiLeftTriangle : kLeftTriangle  )
+var marker:          string       = get(g:, 'stylepicker_marker',        ascii ? '>> ' : '❯❯ '                       )
+var quotes:          list<string> = get(g:, 'stylepicker_quotes',        kDefaultQuotes                              )
+var num_recent:      number       = get(g:, 'stylepicker_num_recent',    20                                          )
+var recentpath:      string       = get(g:, 'stylepicker_recentpath',    ''                                          )
+var righttriangle:   string       = get(g:, 'stylepicker_righttriangle', ascii ? kAsciiRightTriangle : kRightTriangle)
+var star:            string       = get(g:, 'stylepicker_star',          ascii ? '*' : '★'                           )
+var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',     1.0                                         )
+var zindex:          number       = get(g:, 'stylepicker_zindex',        50                                          )
 # }}}
 # Internal State {{{
-var sHiGroup:  react.Property                          # Reference to the current highlight group for autocommands
-var sX:        number         = 0                      # Horizontal position of the style picker
-var sY:        number         = 0                      # Vertical position of the style picker
-var sRecent:   react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
-var sFavorite: react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
+var sHiGroup:  react.Property                             # Reference to the current highlight group for autocommands
+var sX:           number      = 0                         # Horizontal position of the style picker
+var sY:           number      = 0                         # Vertical position of the style picker
+var sRedrawCount: number      = 0                         # Number of times the popup has been redrawn
+var sRecent:      react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
+var sFavorite:    react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
 
 class Config
   static var AllowKeyMapping = () => allowkeymapping
   static var Ascii           = () => ascii
   static var BorderChars     = () => borderchars
   static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
+  static var Debug           = () => debug
   static var Digits          = () => digitchars
   static var DragSymbol      = () => dragsymbol
   static var FavoritePath    = () => favoritepath
@@ -162,11 +171,13 @@ class Config
   static var GutterWidth     = () => strcharlen(marker)
   static var Highlight       = () => highlight
   static var KeyAliases      = () => keyaliases
+  static var LeftTriangle    = () => lefttriangle
   static var Marker          = () => marker
   static var NumRecent       = () => num_recent
   static var PopupWidth      = () => max([39 + strdisplaywidth(marker), 42])
   static var RandomQuotation = () => quotes[rand() % len(quotes)]
   static var RecentPath      = () => recentpath
+  static var RightTriangle   = () => righttriangle
   static var SliderSymbols   = () => ascii ? kAsciiSliderSymbols : kSliderSymbols
   static var Star            = () => star
   static var StepDelay       = () => stepdelay
@@ -643,12 +654,13 @@ class State
   # inverse to each other. For instance, HSB(1,1,1) -> RGB(3,3,3), but when
   # converting back, RGB(3,3,3) -> HSB(0,0,1). We don't want the sliders to
   # jump around randomly.
-  var cachedHsb  = react.Property.new([-1, -1, -1])
-  var cachedHex  = '#000000'
-  var hsb        = react.Property.new([-1, -1, -1])
-  var hue        = react.Property.new(-1)
-  var saturation = react.Property.new(-1)
-  var brightness = react.Property.new(-1)
+  var cachedHsb   = react.Property.new([-1, -1, -1])
+  var cachedHex   = '#000000'
+  var hsb         = react.Property.new([-1, -1, -1])
+  var hue         = react.Property.new(-1)
+  var saturation  = react.Property.new(-1)
+  var brightness  = react.Property.new(-1)
+  var redrawCount = react.Property.new(0) # Count how many times the popup is redrawn
 
   public var winid    = 0  # StylePicker window ID
 
@@ -838,18 +850,18 @@ const kPropTypeGray100          = '_g100' # Grayscale blocks
 
 def InitTextPropertyTypes(bufnr: number)
   var propTypes = {
-    [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'       },
-    [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'      },
-    [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label'               },
-    [kPropTypeCurrentHighlight]: {bufnr: bufnr, highlight: 'stylePickerCurrent'  },
-    [kPropTypeHeader          ]: {bufnr: bufnr, highlight: 'Title'               },
-    [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor' },
-    [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'},
-    [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'  },
-    [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'  },
-    [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'  },
-    [kPropTypeGray075         ]: {bufnr: bufnr, highlight: 'stylePickerGray075'  },
-    [kPropTypeGray100         ]: {bufnr: bufnr, highlight: 'stylePickerGray100'  },
+    [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'                   },
+    [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'                  },
+    [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label',                          },
+    [kPropTypeCurrentHighlight]: {bufnr: bufnr, highlight: 'stylePickerCurrent'              },
+    [kPropTypeHeader          ]: {bufnr: bufnr, highlight: 'Title',               priority: 1}, # Higher than label
+    [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor'             },
+    [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'            },
+    [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'              },
+    [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'              },
+    [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'              },
+    [kPropTypeGray075         ]: {bufnr: bufnr, highlight: 'stylePickerGray075'              },
+    [kPropTypeGray100         ]: {bufnr: bufnr, highlight: 'stylePickerGray100'              },
   }
 
   for [propType, propValue] in items(propTypes)
@@ -994,11 +1006,75 @@ enddef
 # }}}
 # FooterView {{{
 def FooterView(rstate: State): View
-  return ReactiveView.new(() => {
-    return [
-      BlankLine(),
-    ]
+  const ll     = Config.LeftTriangle()
+  const llen   = strcharlen(ll)
+  const rr     = Config.RightTriangle()
+  const rlen   = strcharlen(rr)
+  const text   = Center($'{ll} Rgb Hsb Gray ?Help {rr}', Config.PopupWidth())
+  const lpos   = stridx(text, ll) # This is in bytes, but it's fine because there are only spaces before ll
+  const offset = lpos + strcharlen(llen) + 1
+  const offsets = {
+    leftArrow:      [lpos,             lpos + llen],
+    rightArrow:     [lpos + llen + 20, lpos + llen + 20 + rlen],
+    [kRgbPaneKey]:  [offset,           offset +  3],
+    [kHsbPaneKey]:  [offset +  4,      offset +  7],
+    [kGrayPaneKey]: [offset +  8,      offset + 12],
+    [kHelpKey]:     [offset + 13,      offset + 18],
+  }
+  const nextPane = {
+    [kRgbPaneKey]:  kHsbPaneKey,
+    [kHsbPaneKey]:  kGrayPaneKey,
+    [kGrayPaneKey]: kHelpKey,
+    [kHelpKey]:     kRgbPaneKey,
+  }
+  const prevPane = {
+    [kRgbPaneKey]:  kHelpKey,
+    [kHsbPaneKey]:  kRgbPaneKey,
+    [kGrayPaneKey]: kHsbPaneKey,
+    [kHelpKey]:     kGrayPaneKey,
+  }
+
+  var footerView = ReactiveView.new(() => {
+    var pane = rstate.pane.Get()
+
+    echomsg 'FOOTER VIEW'
+
+    if pane == kCollapsedPaneKey
+      return []
+    endif
+
+    var selectedStart = offsets[pane][0]
+    var selectedEnd   = offsets[pane][1]
+
+    var footer = TextLine.new(text)
+    ->Labeled(offset,      offset + 1)  # R[gb]
+    ->Labeled(offset + 4,  offset + 5)  # H[sb]
+    ->Labeled(offset + 8,  offset + 9)  # G[ray]
+    ->Labeled(offset + 13, offset + 14) # H[elp
+    ->WithTitle(selectedStart, selectedEnd)
+
+    return [BlankLine(), footer]
   })
+
+  footerView.OnMouseEvent(kLeftClickKey, (_, col) => {
+    var pos = col - 3
+
+    if pos >= offsets.leftArrow[0] - 1 && pos <= offsets.leftArrow[1]
+      rstate.pane.Set(prevPane[rstate.pane.Get()])
+    elseif pos >= offsets.rightArrow[0] - 1 && pos <= offsets.rightArrow[1]
+      rstate.pane.Set(nextPane[rstate.pane.Get()])
+    elseif pos >= offsets[kRgbPaneKey][0] && pos < offsets[kRgbPaneKey][1]
+      rstate.pane.Set(kRgbPaneKey)
+    elseif pos >= offsets[kHsbPaneKey][0] && pos < offsets[kHsbPaneKey][1]
+      rstate.pane.Set(kHsbPaneKey)
+    elseif pos >= offsets[kGrayPaneKey][0] && pos < offsets[kGrayPaneKey][1]
+      rstate.pane.Set(kGrayPaneKey)
+    elseif pos >= offsets[kHelpKey][0] && pos < offsets[kHelpKey][1]
+      rstate.pane.Set(kHelpKey)
+    endif
+  })
+
+  return footerView
 enddef
 # }}}
 # SectionTitleView {{{
@@ -1514,7 +1590,7 @@ def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): V
 enddef
 # }}}
 # HelpView {{{
-def HelpView(): View
+def HelpView(rstate: State): View
   var s = {
     [00]: KeySymbol(kUpKey),
     [01]: KeySymbol(kDownKey),
@@ -1588,7 +1664,9 @@ def HelpView(): View
   ], true)
   helpView.focused.Set(true)
 
-  return helpView
+  var helpVStack = VStack.new([helpView, FooterView(rstate)])
+
+  return helpVStack
 enddef
 # }}}
 # Highlight {{{
@@ -1639,7 +1717,7 @@ class UI
     var rgbView       = StylePickerView(kRgbPaneKey,  this.rstate, RgbSliderView)
     var hsbView       = StylePickerView(kHsbPaneKey,  this.rstate, HsbSliderView)
     var grayscaleView = StylePickerView(kGrayPaneKey, this.rstate, GrayscaleSliderView)
-    var helpView      = HelpView()
+    var helpView      = HelpView(this.rstate)
     var collapsedView = CollapsedView()
 
     this.rstate.pane.Set(initialPane)
@@ -1739,14 +1817,15 @@ def ClosedCallback(winid: number, result: any = '')
   DisableAllAutocommands()
   sX = popup_getoptions(winid).col
   sY = popup_getoptions(winid).line
+  sRedrawCount = 0
 enddef
 
 def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   InitHighlight()
 
   var _hiGroup = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
-  var rstate   = State.new(_hiGroup, 'fg')
-  var ui       = UI.new(rstate)
+  var  rstate  = State.new(_hiGroup, 'fg')
+  var  ui      = UI.new(rstate)
 
   var winid    = popup_create('', {
     border:      [1, 1, 1, 1],
@@ -1779,11 +1858,20 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     TrackCursorAutoCmd()
   endif
 
-  var counter = 0
-
   def Redraw()
-    ++counter
-    popup_settext(winid, ui.rootView.Get().Body() + [{text: string(counter), props: []}])
+    ++sRedrawCount
+
+    if Config.Debug() == 0
+      popup_settext(winid, ui.rootView.Get().Body())
+      return
+    endif
+
+    var debugText = [
+      BlankLine().value,
+      TextLine.new(Center(string(sRedrawCount), Config.PopupWidth())).value,
+    ]
+
+    popup_settext(winid, ui.rootView.Get().Body() + debugText)
   enddef
 
   react.CreateEffect(() => Redraw(), {weight: 100})
