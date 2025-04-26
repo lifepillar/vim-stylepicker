@@ -1418,42 +1418,43 @@ enddef
 # }}}
 # HelpView {{{
 def HelpView(): View
-  var s = [
-    KeySymbol(kUpKey),                # 00
-    KeySymbol(kDownKey),              # 01
-    KeySymbol(kTopKey),               # 02
-    KeySymbol(kBotKey),               # 03
-    KeySymbol(kFgBgSpKey),            # 04
-    KeySymbol(kSpBgFgKey),            # 05
-    KeySymbol(kToggleTrackingKey),    # 06
-    KeySymbol(kRgbPaneKey),           # 07
-    KeySymbol(kHsbPaneKey),           # 08
-    KeySymbol(kGrayPaneKey),          # 09
-    KeySymbol(kCloseKey),             # 10
-    KeySymbol(kCancelKey),            # 11
-    KeySymbol(kHelpKey),              # 12
-    KeySymbol(kToggleBoldKey),        # 13
-    KeySymbol(kToggleItalicKey),      # 14
-    KeySymbol(kToggleReverseKey),     # 15
-    KeySymbol(kToggleStandoutKey),    # 16
-    KeySymbol(kToggleStrikeThruKey),  # 17
-    KeySymbol(kToggleUnderlineKey),   # 18
-    KeySymbol(kToggleUndercurlKey),   # 19
-    KeySymbol(kToggleUnderdashedKey), # 20
-    KeySymbol(kToggleUnderdottedKey), # 21
-    KeySymbol(kToggleUnderdoubleKey), # 22
-    KeySymbol(kIncrementKey),         # 23
-    KeySymbol(kDecrementKey),         # 24
-    KeySymbol(kYankKey),              # 25
-    KeySymbol(kPasteKey),             # 26
-    KeySymbol(kSetColorKey),          # 27
-    KeySymbol(kSetHiGroupKey),        # 28
-    KeySymbol(kClearKey),             # 29
-    KeySymbol(kAddToFavoritesKey),    # 30
-    KeySymbol(kYankKey),              # 31
-    KeySymbol(kRemoveKey),            # 32
-    KeySymbol(kChooseKey),            # 33
-  ]
+  var s = {
+    [00]: KeySymbol(kUpKey),
+    [01]: KeySymbol(kDownKey),
+    [02]: KeySymbol(kTopKey),
+    [03]: KeySymbol(kBotKey),
+    [04]: KeySymbol(kFgBgSpKey),
+    [05]: KeySymbol(kSpBgFgKey),
+    [06]: KeySymbol(kToggleTrackingKey),
+    [07]: KeySymbol(kRgbPaneKey),
+    [08]: KeySymbol(kHsbPaneKey),
+    [09]: KeySymbol(kGrayPaneKey),
+    [10]: KeySymbol(kCloseKey),
+    [11]: KeySymbol(kCancelKey),
+    [12]: KeySymbol(kHelpKey),
+    [13]: KeySymbol(kCollapsedPaneKey),
+    [14]: KeySymbol(kToggleBoldKey),
+    [15]: KeySymbol(kToggleItalicKey),
+    [16]: KeySymbol(kToggleReverseKey),
+    [17]: KeySymbol(kToggleStandoutKey),
+    [18]: KeySymbol(kToggleStrikeThruKey),
+    [19]: KeySymbol(kToggleUnderlineKey),
+    [20]: KeySymbol(kToggleUndercurlKey),
+    [21]: KeySymbol(kToggleUnderdashedKey),
+    [22]: KeySymbol(kToggleUnderdottedKey),
+    [23]: KeySymbol(kToggleUnderdoubleKey),
+    [24]: KeySymbol(kIncrementKey),
+    [25]: KeySymbol(kDecrementKey),
+    [26]: KeySymbol(kYankKey),
+    [27]: KeySymbol(kPasteKey),
+    [28]: KeySymbol(kSetColorKey),
+    [29]: KeySymbol(kSetHiGroupKey),
+    [30]: KeySymbol(kClearKey),
+    [31]: KeySymbol(kAddToFavoritesKey),
+    [32]: KeySymbol(kYankKey),
+    [33]: KeySymbol(kRemoveKey),
+    [34]: KeySymbol(kChooseKey),
+  }
   var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
 
   # Pad with spaces, so all symbol strings have the same width
@@ -1469,24 +1470,24 @@ def HelpView(): View
     TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
     TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
     TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
-    TextLine.new($'{s[06]} Toggle tracking   '),
+    TextLine.new($'{s[06]} Toggle tracking   {s[13]} Toggle Collapse'),
     BlankLine(),
     TextLine.new('Attributes')->Labeled(),
-    TextLine.new($'{s[13]} Toggle boldface   {s[18]} Toggle underline'),
-    TextLine.new($'{s[14]} Toggle italics    {s[19]} Toggle undercurl'),
-    TextLine.new($'{s[15]} Toggle reverse    {s[20]} Toggle underdashed'),
-    TextLine.new($'{s[16]} Toggle standout   {s[21]} Toggle underdotted'),
-    TextLine.new($'{s[17]} Toggle strikethru {s[22]} Toggle underdouble'),
+    TextLine.new($'{s[14]} Toggle boldface   {s[19]} Toggle underline'),
+    TextLine.new($'{s[15]} Toggle italics    {s[20]} Toggle undercurl'),
+    TextLine.new($'{s[16]} Toggle reverse    {s[21]} Toggle underdashed'),
+    TextLine.new($'{s[17]} Toggle standout   {s[22]} Toggle underdotted'),
+    TextLine.new($'{s[18]} Toggle strikethru {s[23]} Toggle underdouble'),
     BlankLine(),
     TextLine.new('Color')->Labeled(),
-    TextLine.new($'{s[23]} Increment value   {s[27]} Set value'),
-    TextLine.new($'{s[24]} Decrement value   {s[28]} Set hi group'),
-    TextLine.new($'{s[25]} Yank color        {s[29]} Clear color'),
-    TextLine.new($'{s[26]} Paste color       {s[30]} Add to favorites'),
+    TextLine.new($'{s[24]} Increment value   {s[28]} Set value'),
+    TextLine.new($'{s[25]} Decrement value   {s[29]} Set hi group'),
+    TextLine.new($'{s[26]} Yank color        {s[30]} Clear color'),
+    TextLine.new($'{s[27]} Paste color       {s[31]} Add to favorites'),
     BlankLine(),
     TextLine.new('Recent & Favorites')->Labeled(),
-    TextLine.new($'{s[31]} Yank color        {s[33]} Pick color'),
-    TextLine.new($'{s[32]} Delete color'),
+    TextLine.new($'{s[32]} Yank color        {s[34]} Pick color'),
+    TextLine.new($'{s[33]} Delete color'),
   ], true)
   helpView.focused.Set(true)
 
