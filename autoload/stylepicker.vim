@@ -21,8 +21,6 @@ type View         = libui.View
 type ViewContent  = libui.ViewContent
 # }}}
 # Constants {{{
-const version = '0.0.1'
-
 const kNumColorsPerLine = 10
 
 const kUltimateFallbackColor = {
@@ -980,14 +978,13 @@ enddef
 # }}}
 # CollapsedView {{{
 def CollapsedView(): View
-  const text      = 'StylePicker'
   const dragsym   = Config.DragSymbol()
-  const width     = Config.PopupWidth()
+  const text      = 'StylePicker  ' .. dragsym
+  const width     = strcharlen(text)
   const startdrag = width - strcharlen(dragsym)
-  const pad       = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
 
   return StaticView.new([
-    TextLine.new(text .. pad .. dragsym)
+    TextLine.new(text)
     ->WithTitle(0, 11)
     ->WithState(false, startdrag, width)
   ])
@@ -1870,7 +1867,6 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     highlight:   empty(Config.Highlight()) ? 'stylePickerHighlight' : Config.Highlight(),
     line:        yPos,
     mapping:     Config.AllowKeyMapping(),
-    minwidth:    Config.PopupWidth(),
     padding:     [0, 1, 0, 1],
     pos:         'topleft',
     resize:      false,
@@ -1896,7 +1892,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
 
     var debugText = [
       BlankLine().value,
-      TextLine.new($'{sRedrawCount}  winid={winid}  bufnr={winbufnr(winid)}  v{version}').value,
+      TextLine.new($'{sRedrawCount}  winid={winid}  bufnr={winbufnr(winid)}').value,
     ]
 
     popup_settext(winid, ui.rootView.Get().Body() + debugText)
