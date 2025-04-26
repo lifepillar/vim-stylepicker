@@ -199,7 +199,7 @@ export abstract class View
       endif
 
       lnum_ -= height
-      child = child.Next()
+      child = child.NextChild()
     endwhile
 
     return false
@@ -257,6 +257,10 @@ export abstract class View
 
   def FirstChild(): View
     return this.llink
+  enddef
+
+  def NextChild(): View
+    return this.rlink
   enddef
 
   def FirstLeaf(): View
