@@ -8,6 +8,7 @@ endif
 # }}}
 # Imports {{{
 import 'libcolor.vim'       as libcolor
+import 'libpath.vim'        as path
 import 'libreactive.vim'    as react
 import 'libstylepicker.vim' as libui
 
@@ -397,9 +398,9 @@ def LoadPalette(loadPath: string): list<string>
   var palette: list<string>
 
   try
-    palette = readfile(loadPath)
+    palette = readfile(path.Expand(loadPath))
   catch /.*/
-    Error($'Could not load favorite colors: {v:exception}')
+    Error($'Could not load colors from file: {v:exception}')
     palette = []
   endtry
 
@@ -411,11 +412,11 @@ enddef
 
 def SavePalette(palette: list<string>, savePath: string)
   try
-    if writefile(palette, savePath, 's') < 0
+    if writefile(palette, path.Expand(savePath), 's') < 0
       throw $'failed to write {savePath}'
     endif
   catch /.*/
-    Error($'Could not persist favorite colors: {v:exception}')
+    Error($'Could not save colors to file: {v:exception}')
   endtry
 enddef
 
@@ -672,11 +673,11 @@ class State
     this.color   = ColorProperty.new(this.hiGroup, this.fgBgSp)
     this.style   = StyleProperty.new(this.hiGroup)
 
-    if !empty(Config.RecentPath())
+    if !empty(Config.RecentPath()) && path.IsReadable(path.Expand(Config.RecentPath()))
       sRecent.Set(LoadPalette(Config.RecentPath()))
     endif
 
-    if !empty(Config.FavoritePath())
+    if !empty(Config.FavoritePath()) && path.IsReadable(path.Expand(Config.FavoritePath()))
       sFavorite.Set(LoadPalette(Config.FavoritePath()))
     endif
 
@@ -717,6 +718,18 @@ class State
         this.SaveToRecent()
       endif
     })
+
+    this.recent.Register(react.CreateEffect(() => { # Save recent palette to file if provided
+      if !empty(Config.RecentPath())
+        SavePalette(this.recent.Get(), Config.RecentPath())
+      endif
+    }, {execute: false})) # No need to save something we've just loaded
+
+    this.favorite.Register(react.CreateEffect(() => { # Save favorite palette to file if provided
+      if !empty(Config.FavoritePath())
+        SavePalette(this.favorite.Get(), Config.FavoritePath())
+      endif
+    }, {execute: false}))
   enddef
 
   def SetStep(digit: number)
@@ -803,6 +816,15 @@ class State
 
       this.color.colorState.Set(ColorState.Saved)
     })
+  enddef
+
+  def AddToFavorite(color: string)
+    var favorite = this.favorite.value
+
+    if color->NotIn(favorite)
+      favorite->add(color)
+      this.favorite.Set(favorite, {force: true})
+    endif
   enddef
 
   def Yank(color: string)
@@ -1036,8 +1058,6 @@ def FooterView(rstate: State): View
 
   var footerView = ReactiveView.new(() => {
     var pane = rstate.pane.Get()
-
-    echomsg 'FOOTER VIEW'
 
     if pane == kCollapsedPaneKey
       return []
@@ -1560,13 +1580,7 @@ def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): V
   })
 
   stylePickerView.OnKeyPress(kAddToFavoritesKey, () => {
-    var color    = rstate.color.Get()
-    var favorite = rstate.favorite.Get()
-
-    if color->NotIn(favorite)
-      favorite->add(color)
-      rstate.favorite.Set(favorite, {force: true})
-    endif
+    rstate.AddToFavorite(rstate.color.Get())
   })
 
   stylePickerView.OnKeyPress(kSetColorKey, () => {
