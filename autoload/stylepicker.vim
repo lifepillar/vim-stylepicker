@@ -940,12 +940,13 @@ def FooterView(rstate: State): View
 enddef
 # }}}
 # SectionTitleView {{{
-def SectionTitleView(title: string): View
+def SectionTitleView(title: string, opts: dict<any> = {}): View
   #   #
   #  # A static line with a Label highlight.
   # #
   ##
-  return StaticView.new([TextLine.new(title)->Labeled()])
+  var text = opts->get('center', false) ? Center(title, Config.PopupWidth()) : title
+  return StaticView.new([TextLine.new(text)->Labeled()])
 enddef
 # }}}
 # GrayscaleSectionView {{{
