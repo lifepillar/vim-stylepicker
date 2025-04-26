@@ -932,20 +932,27 @@ enddef
 # }}}
 # CollapsedView {{{
 def CollapsedView(): View
-  const text    = 'StylePicker'
-  const dragsym = Config.DragSymbol()
-  const pad     = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
+  const text      = 'StylePicker'
+  const dragsym   = Config.DragSymbol()
+  const width     = Config.PopupWidth()
+  const startdrag = width - strcharlen(dragsym)
+  const pad       = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
 
-  return StaticView.new([TextLine.new(text .. pad .. dragsym)->WithTitle(0, 11)])
+  return StaticView.new([
+    TextLine.new(text .. pad .. dragsym)
+    ->WithTitle(0, 11)
+    ->WithState(false, startdrag, width)
+  ])
 enddef
 # }}}
 # HeaderView {{{
 def HeaderView(rstate: State, pane: string): View
-  const attrs   = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
-  const width   = Config.PopupWidth()
-  const offset  = width - strcharlen(attrs)
-  const styles  = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
-  const dragsym = Config.DragSymbol()
+  const attrs     = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
+  const width     = Config.PopupWidth()
+  const offset    = width - strcharlen(attrs)
+  const styles    = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
+  const dragsym   = Config.DragSymbol()
+  const startdrag = width - strcharlen(dragsym)
 
   var headerView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
@@ -961,7 +968,8 @@ def HeaderView(rstate: State, pane: string): View
         ->WithState(style.reverse,       3, 4)
         ->WithState(style.standout,      4, 5)
         ->WithState(style.strikethrough, 5, 6)
-        ->WithTitle(7, 12 + strcharlen(hiGroup)),
+        ->WithTitle(7, 12 + strcharlen(hiGroup))
+        ->WithState(false, startdrag, width),
         BlankLine(),
       ]
     endif
