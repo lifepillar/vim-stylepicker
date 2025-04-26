@@ -41,6 +41,8 @@ const kSpBgFg = {
   'fg': 'sp',
 }
 
+const kDragSymbol         = '𝌆'
+const kAsciiDragSymbol    = '='
 const kBorderChars        = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
 const kAsciiBorderChars   = ['-', '|', '-', '|', ':', ':', ':', ':']
 const kSliderSymbols      = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
@@ -129,6 +131,7 @@ var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',   true    
 var ascii:           bool         = get(g:, 'stylepicker_ascii',        false                                   )
 var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ascii ? kAsciiBorderChars : kBorderChars)
 var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',   ascii ? kAsciiDigits      : kDigits     )
+var dragsymbol:      string       = get(g:, 'stylepicker_dragsymbol',   ascii ? kAsciiDragSymbol  : kDragSymbol )
 var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''                                      )
 var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
 var highlight:       string       = get(g:, 'stylepicker_highlight',    ''                                      )
@@ -153,6 +156,7 @@ class Config
   static var BorderChars     = () => borderchars
   static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
   static var Digits          = () => digitchars
+  static var DragSymbol      = () => dragsymbol
   static var FavoritePath    = () => favoritepath
   static var Gutter          = () => repeat(' ', strcharlen(marker))
   static var GutterWidth     = () => strcharlen(marker)
@@ -928,7 +932,11 @@ enddef
 # }}}
 # CollapsedView {{{
 def CollapsedView(): View
-  return StaticView.new([TextLine.new('StylePicker')->WithTitle(0, 11)])
+  const text    = 'StylePicker'
+  const dragsym = Config.DragSymbol()
+  const pad     = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
+
+  return StaticView.new([TextLine.new(text .. pad .. dragsym)->WithTitle(0, 11)])
 enddef
 # }}}
 # HeaderView {{{
@@ -937,14 +945,16 @@ def HeaderView(rstate: State, pane: string): View
   const width   = Config.PopupWidth()
   const offset  = width - strcharlen(attrs)
   const styles  = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
+  const dragsym = Config.DragSymbol()
 
   var headerView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
       var hiGroup = rstate.hiGroup.Get()
       var style   = rstate.style.Get()
       var text    = $'BIUVSK [{rstate.fgBgSp.Get()}] {hiGroup}'
+      var pad     = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
 
-      return [TextLine.new(text)
+      return [TextLine.new(text .. pad .. dragsym)
         ->WithState(style.bold,          0, 1)
         ->WithState(style.italic,        1, 2)
         ->WithState(style.underline,     2, 3)
@@ -1693,6 +1703,13 @@ class UI
         return false
       endif
 
+      var lnum = mousepos.line
+      var col  = mousepos.wincol
+
+      if lnum <= 1 && (col > Config.PopupWidth() - strcharlen(Config.DragSymbol()))
+        return false # Leave some room for dragging the popup
+      endif
+
       return this.rootView.Get().RespondToMouseEvent(keyCode, mousepos.line, mousepos.wincol)
     endif
 
@@ -1731,6 +1748,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     col:         xPos,
     cursorline:  false,
     drag:        true,
+    dragall:     true,
     filter:      ui.HandleEvent,
     filtermode:  'no',
     hidden:      true,
