@@ -1617,7 +1617,7 @@ class UI
         return false
       endif
 
-      return this.rootView.Get().RespondToMouseEvent(keyCode, mousepos.line, mousepos.column)
+      return this.rootView.Get().RespondToMouseEvent(keyCode, mousepos.line, mousepos.wincol)
     endif
 
     return this.rootView.Get().SubViewWithFocus().RespondToKeyEvent(keyCode)
