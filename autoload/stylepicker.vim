@@ -126,10 +126,10 @@ const kASCIIKey = {
 # TODO: export user settings
 var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',   true                                    )
 var ascii:           bool         = get(g:, 'stylepicker_ascii',        false                                   )
-var background:      string       = get(g:, 'stylepicker_background',   'Normal'                                )
 var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',  ascii ? kAsciiBorderChars : kBorderChars)
 var favoritepath:    string       = get(g:, 'stylepicker_favoritepath', ''                                      )
 var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',   {}                                      )
+var highlight:       string       = get(g:, 'stylepicker_highlight',    ''                                      )
 var marker:          string       = get(g:, 'stylepicker_marker',       ascii ? '>> ' : '❯❯ '                   )
 var quotes:          list<string> = get(g:, 'stylepicker_quotes',       kDefaultQuotes                          )
 var num_recent:      number       = get(g:, 'stylepicker_num_recent',   20                                      )
@@ -148,12 +148,12 @@ var sFavorite: react.Property = react.Property.new([]) # Cached favorite colors 
 class Config
   static var AllowKeyMapping = () => allowkeymapping
   static var Ascii           = () => ascii
-  static var Background      = () => background
   static var BorderChars     = () => borderchars
   static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
   static var FavoritePath    = () => favoritepath
   static var Gutter          = () => repeat(' ', strcharlen(marker))
   static var GutterWidth     = () => strcharlen(marker)
+  static var Highlight       = () => highlight
   static var KeyAliases      = () => keyaliases
   static var Marker          = () => marker
   static var NumRecent       = () => num_recent
@@ -204,8 +204,8 @@ def Center(text: string, width: number): string
   return $'{lPad}{text}{rPad}'
 enddef
 
-def Msg(text: string, highlight = 'Normal', log = true)
-  execute 'echohl' highlight
+def Msg(text: string, hiGroup = 'Normal', log = true)
+  execute 'echohl' hiGroup
 
   if log
     echomsg $'[StylePicker] {text}'
@@ -531,6 +531,12 @@ class ColorProperty extends react.Property
 
   def Set_(newValue: string)
     super.Set(newValue)
+
+    var mode    = Config.ColorMode()
+    var fgColor = HiGroupColorValue(this._hiGroup, 'fg', mode)
+    var bgColor = HiGroupColorValue(this._hiGroup, 'bg', mode)
+
+    hlset([{name: 'stylePickerCurrent', [$'{mode}fg']: fgColor, [$'{mode}bg']: bgColor}])
   enddef
 endclass
 
@@ -789,7 +795,6 @@ const kPropTypeCurrentHighlight = '_curh' # To highlight text with the currently
 const kPropTypeHeader           = '_titl' # Highlight for title section
 const kPropTypeGuiHighlight     = '_gcol' # Highlight for the current GUI color
 const kPropTypeCtermHighlight   = '_tcol' # Highlight for the current cterm color
-const kPropTypeGray             = '_gray' # Grayscale blocks
 const kPropTypeGray000          = '_g000' # Grayscale blocks
 const kPropTypeGray025          = '_g025' # Grayscale blocks
 const kPropTypeGray050          = '_g050' # Grayscale blocks
@@ -801,11 +806,10 @@ def InitTextPropertyTypes(bufnr: number)
     [kPropTypeOn              ]: {bufnr: bufnr, highlight: 'stylePickerOn'       },
     [kPropTypeOff             ]: {bufnr: bufnr, highlight: 'stylePickerOff'      },
     [kPropTypeLabel           ]: {bufnr: bufnr, highlight: 'Label'               },
-    [kPropTypeCurrentHighlight]: {bufnr: bufnr                                   },
+    [kPropTypeCurrentHighlight]: {bufnr: bufnr, highlight: 'stylePickerCurrent'  },
     [kPropTypeHeader          ]: {bufnr: bufnr, highlight: 'Title'               },
     [kPropTypeGuiHighlight    ]: {bufnr: bufnr, highlight: 'stylePickerGuiColor' },
     [kPropTypeCtermHighlight  ]: {bufnr: bufnr, highlight: 'stylePickerTermColor'},
-    [kPropTypeGray            ]: {bufnr: bufnr                                   },
     [kPropTypeGray000         ]: {bufnr: bufnr, highlight: 'stylePickerGray000'  },
     [kPropTypeGray025         ]: {bufnr: bufnr, highlight: 'stylePickerGray025'  },
     [kPropTypeGray050         ]: {bufnr: bufnr, highlight: 'stylePickerGray050'  },
@@ -1500,10 +1504,16 @@ def InitHighlight()
   var warnColor    = HiGroupColorValue('WarningMsg', 'fg', mode)
   var labelColor   = HiGroupColorValue('Label',      'fg', mode)
   var commentColor = HiGroupColorValue('Comment',    'fg', mode)
+  var fgColor      = HiGroupColorValue('Normal',     'fg', mode)
+  var bgColor      = HiGroupColorValue('Normal',     'bg', mode)
 
-  execute $'highlight stylePickerOn      {mode}fg={labelColor}   {style}=bold term=bold'
-  execute $'highlight stylePickerOff     {mode}fg={commentColor} {style}=NONE term=NONE'
-  execute $'highlight stylePickerWarning {mode}fg={warnColor}    {style}=bold term=bold'
+  execute $'highlight stylePickerOn        {mode}fg={labelColor}   {style}=bold term=bold'
+  execute $'highlight stylePickerOff       {mode}fg={commentColor} {style}=NONE term=NONE'
+  execute $'highlight stylePickerWarning   {mode}fg={warnColor}    {style}=bold term=bold'
+  # Used as normal highlight group (default fg and bg colors) in the stylepicker:
+  execute $'highlight stylePickerHighlight {mode}fg={fgColor} {mode}bg={bgColor}'
+  # Used to store the highlight group currently in use:
+  execute $'highlight stylePickerCurrent   {mode}fg={fgColor} {mode}bg={bgColor}'
 
   highlight stylePickerGray000 guibg=#000000 ctermbg=16
   highlight stylePickerGray025 guibg=#404040 ctermbg=238
@@ -1525,7 +1535,6 @@ class UI
   enddef
 
   def Init(winid: number, initialPane: string)
-    InitHighlight()
     InitTextPropertyTypes(winbufnr(winid))
     this.rstate.winid = winid
 
@@ -1628,6 +1637,8 @@ def ClosedCallback(winid: number, result: any = '')
 enddef
 
 def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
+  InitHighlight()
+
   var _hiGroup = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
   var rstate   = State.new(_hiGroup, 'fg')
   var ui       = UI.new(rstate)
@@ -1643,7 +1654,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     filter:      ui.HandleEvent,
     filtermode:  'no',
     hidden:      true,
-    highlight:   Config.Background(),
+    highlight:   empty(Config.Highlight()) ? 'stylePickerHighlight' : Config.Highlight(),
     line:        yPos,
     mapping:     Config.AllowKeyMapping(),
     minwidth:    Config.PopupWidth(),
@@ -1661,12 +1672,6 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   if empty(hiGroup)
     TrackCursorAutoCmd()
   endif
-
-  react.CreateEffect(() => {
-    prop_type_change(kPropTypeCurrentHighlight,
-      {bufnr: winbufnr(winid), highlight: rstate.hiGroup.Get()}
-    )
-  })
 
   var counter = 0
 
