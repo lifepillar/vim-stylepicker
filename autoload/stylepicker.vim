@@ -554,8 +554,14 @@ class ColorProperty extends react.Property
     var mode    = Config.ColorMode()
     var fgColor = HiGroupColorValue(this._hiGroup, 'fg', mode)
     var bgColor = HiGroupColorValue(this._hiGroup, 'bg', mode)
+    var spColor = HiGroupColorValue(this._hiGroup, 'sp', mode)
 
-    hlset([{name: 'stylePickerCurrent', [$'{mode}fg']: fgColor, [$'{mode}bg']: bgColor}])
+    hlset([{
+      name: 'stylePickerCurrent',
+      [$'{mode}fg']: fgColor,
+      [$'{mode}bg']: bgColor,
+      [$'{mode}sp']: spColor,
+    }])
   enddef
 endclass
 
@@ -586,13 +592,15 @@ class StyleProperty extends react.Property
       this._hiGroup = hiGroup.Get()
       var hl        = hlget(this._hiGroup, true)[0]
       var mode      = Config.StyleMode()
-      var style     = extendnew(StyleProperty.styles, get(hl, mode, {}), 'force')
+      var style     = get(hl, mode, {}) # Only attributes that are set
+      var value     = extendnew(StyleProperty.styles, style, 'force') # All attributes
 
-      if style.undercurl || style.underdashed || style.underdotted || style.underdouble
-        style.underline = true
+      if value.undercurl || value.underdashed || value.underdotted || value.underdouble
+        value.underline = true
       endif
 
-      this.Set_(style) # `super` cannot appear inside a lambda
+      hlset([{name: 'stylePickerCurrent', [mode]: style}])
+      this.Set_(value) # `super` cannot appear inside a lambda
     })
   enddef
 
@@ -600,7 +608,8 @@ class StyleProperty extends react.Property
     var style = filter(value, (_, v) => v)
     var mode  = Config.StyleMode()
 
-    hlset([{name: this._hiGroup, [mode]: style}])
+    hlset([{name: this._hiGroup,        [mode]: style}])
+    hlset([{name: 'stylePickerCurrent', [mode]: style}])
     super.Set(extendnew(StyleProperty.styles, value, 'force'), args)
   enddef
 
