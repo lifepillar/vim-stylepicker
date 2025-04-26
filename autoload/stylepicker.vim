@@ -249,9 +249,6 @@ def Notification(winid: number, text: string, opts: dict<any> = {})
   var line     = where.core_line + ((where.core_height - 3) / 2) + 1
   var col      = where.core_col + ((where.core_width - width) / 2) - 2
 
-
-  echomsg '[' where.core_line where.core_col where.core_height where.core_width ']' line col
-
   popup_notification(Center(text, width), {
     pos:         'topleft',
     line:        line,
