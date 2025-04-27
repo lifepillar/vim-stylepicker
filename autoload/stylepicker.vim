@@ -1024,12 +1024,11 @@ def CollapsedView(): View
   return ReactiveView.new(() => {
     var dragSym   = Config.DragSymbol()
     var dragWidth = strcharlen(dragSym)
-    var text      = 'StylePicker'
+    var pad       = repeat(' ', Config.MinWidth() - strcharlen('StylePicker') - dragWidth)
+    var text      = 'StylePicker' .. pad .. dragSym
     var width     = strcharlen(text)
-    var pad       = repeat(' ', Config.MinWidth() - width - dragWidth)
-    var startDrag = width - dragWidth
 
-    return [TextLine.new(text .. pad .. dragSym)->WithTitle(0, 11)->WithState(false, startDrag, width)]
+    return [TextLine.new(text)->WithTitle(0, 11)->WithState(false, width - dragWidth, width)]
   })
 enddef
 # }}}
