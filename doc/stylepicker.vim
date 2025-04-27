@@ -203,6 +203,31 @@ is loaded: use them in your `vimrc` to set your preferred settings. The
 functions can be invoked in scripts or on the command-line to dynamically
 configure the style picker after it has been loaded.
 
+						*'stylepicker.Set()'*
+Set({option}, {value})
+		Set the option called {option} to the given {value}. In most
+		cases, the change will have an immediate effect. To use on the
+		command line, replace . with #, and false/true with 0/1. For
+		example:
+>
+		:let stylepicker#Set('marker', '==> ')
+<
+		{option} is the name of a global option with the
+		g:stylepicker_ prefix removed.
+
+						*'stylepicker.Settings()'*
+Settings([{options}])
+		Set multiple options at once. {options} is a dictionary
+		whose keys are options' names (as in |stylepicker.Set()|).
+>
+		:let stylepicker#Settings({ascii: 1, 'asciimarker': '> '})
+<
+		Returns a dictionary of all settings. You may invoke it
+		without arguments to get the current values of all the
+		options:
+>
+		:echo stylepicker#Settings()
+<
 						*'g:stylepicker_allowkeymapping'*
 Allow for key mapping. See "mapping" in |popup_create-arguments|.
 >
