@@ -1355,9 +1355,10 @@ def ColorInfoView(rstate: State, pane: string): View
       var delta       = printf("%.1f", approxCol.delta)[ : 2]
       var guiGuess    = (color != HiGroupColorValue(hiGroup, fgBgSp, 'gui') ? '!' : ' ')
       var ctermGuess  = (string(approxCol.xterm) != HiGroupColorValue(hiGroup, fgBgSp, 'cterm') ? '!' : ' ')
+      var deltaSym    = Config.Ascii() ? ' ' : 'Δ'
 
       var info = printf(
-        $' {guiGuess}   {ctermGuess}  %s %-5S %3d/%s %-5S Δ{delta}',
+        $' {guiGuess}   {ctermGuess}  %s %-5S %3d/%s %-5S {deltaSym}{delta}',
         color[1 : ],
         repeat(Config.Star(), guiScore),
         approxCol.xterm,
