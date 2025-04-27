@@ -1867,6 +1867,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     highlight:   empty(Config.Highlight()) ? 'stylePickerHighlight' : Config.Highlight(),
     line:        yPos,
     mapping:     Config.AllowKeyMapping(),
+    minwidth:    15,
     padding:     [0, 1, 0, 1],
     pos:         'topleft',
     resize:      false,
