@@ -187,6 +187,9 @@ When you press |A|, the current color is added to the Favorite Colors palette.
 You may choose, delete or yank a favorite color in the same way as for recent
 colors.
 
+Clicking on a color swath in either palette will also make it the active
+color.
+
 Both palettes are remembered if you close and then reopen the style picker
 during the same Vim session. But to make them persist across sessions, you
 must specify a location where they can be saved. For details, see
