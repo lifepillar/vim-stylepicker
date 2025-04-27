@@ -1,5 +1,16 @@
 vim9script
 
+# TODO
+# - improve dragging of sliders
+# - fix issues with key aliases
+# - use strdisplaywidth() instead of strcharlen() (try markers with emojis!)
+# - double-check that default tab width is used (for markers with tabs)
+# - Address dynamic change of numrecent (forbid?)
+# - fix left and right symbols breaking the footer when they are longer than
+#   one character.
+# - Allow D, Y, (Enter?) without prompt?
+# - Gradient-based pane (to choose shades between two colors)
+
 # Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
   echomsg 'Stylepicker requires Vim 9.1 compiled with popupwin and textprop.'
