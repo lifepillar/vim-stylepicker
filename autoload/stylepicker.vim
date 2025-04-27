@@ -42,19 +42,6 @@ const kSpBgFg = {
   'fg': 'sp',
 }
 
-const kDragSymbol         = '𝌆'
-const kAsciiDragSymbol    = '='
-const kLeftTriangle       = '◀︎'
-const kRightTriangle      = '▶︎'
-const kAsciiLeftTriangle  = '<'
-const kAsciiRightTriangle = '>'
-const kBorderChars        = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
-const kAsciiBorderChars   = ['-', '|', '-', '|', ':', ':', ':', ':']
-const kSliderSymbols      = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█']
-const kAsciiSliderSymbols = [" ", ".", ":", "!", "|", "/", "-", "=", "#"]
-const kDigits             = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
-const kAsciiDigits        = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-
 const kDefaultQuotes = [
   'Absentem edit cum ebrio qui litigat.',
   'Accipere quam facere praestat iniuriam',
@@ -130,26 +117,104 @@ const kASCIIKey = {
   "\<s-enter>": "S-Enter",
 }
 # }}}
-# User Settings {{{
-# TODO: export user settings
-var allowkeymapping: bool         = get(g:, 'stylepicker_keymapping',    true                                        )
-var ascii:           bool         = get(g:, 'stylepicker_ascii',         false                                       )
-var borderchars:     list<string> = get(g:, 'stylepicker_borderchars',   ascii ? kAsciiBorderChars : kBorderChars    )
-var debug:           number       = get(g:, 'stylepicker_debug',         0                                           )
-var digitchars:      list<string> = get(g:, 'stylepicker_digitchars',    ascii ? kAsciiDigits      : kDigits         )
-var dragsymbol:      string       = get(g:, 'stylepicker_dragsymbol',    ascii ? kAsciiDragSymbol  : kDragSymbol     )
-var favoritepath:    string       = get(g:, 'stylepicker_favoritepath',  ''                                          )
-var keyaliases:      dict<string> = get(g:, 'stylepicker_keyaliases',    {}                                          )
-var highlight:       string       = get(g:, 'stylepicker_highlight',     ''                                          )
-var lefttriangle:    string       = get(g:, 'stylepicker_lefttriangle',  ascii ? kAsciiLeftTriangle : kLeftTriangle  )
-var marker:          string       = get(g:, 'stylepicker_marker',        ascii ? '>> ' : '❯❯ '                       )
-var quotes:          list<string> = get(g:, 'stylepicker_quotes',        kDefaultQuotes                              )
-var num_recent:      number       = get(g:, 'stylepicker_num_recent',    20                                          )
-var recentpath:      string       = get(g:, 'stylepicker_recentpath',    ''                                          )
-var righttriangle:   string       = get(g:, 'stylepicker_righttriangle', ascii ? kAsciiRightTriangle : kRightTriangle)
-var star:            string       = get(g:, 'stylepicker_star',          ascii ? '*' : '★'                           )
-var stepdelay:       float        = get(g:, 'stylepicker_stepdelay',     1.0                                         )
-var zindex:          number       = get(g:, 'stylepicker_zindex',        50                                          )
+# Reactive User Settings {{{
+const kUserSettings: dict<any> = {
+  allowkeymapping:    true,
+  ascii:              false,
+  asciiborderchars:   ['-', '|', '-', '|', ':', ':', ':', ':'],
+  asciidigitchars:    ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+  asciidragsymbol:    '=',
+  asciileftsymbol:    '<',
+  asciirightsymbol:   '>',
+  asciimarker:        '>> ',
+  asciislidersymbols: [" ", ".", ":", "!", "|", "/", "-", "=", "#"],
+  asciistar:          '*',
+  borderchars:        ['─', '│', '─', '│', '╭', '╮', '╯', '╰'],
+  debug:              0,
+  digitchars:         ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'],
+  dragsymbol:         '𝌆',
+  favoritepath:       '',
+  keyaliases:         {},
+  highlight:          '',
+  leftsymbol:         '◀︎',
+  marker:             '❯❯ ',
+  minwidth:           15,
+  quotes:             kDefaultQuotes,
+  numrecent:          20,
+  recentpath:         '',
+  rightsymbol:        '▶︎',
+  slidersymbols:      [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", '█'],
+  star:               '★',
+  stepdelay:          1.0,
+  zindex:             50,
+}
+
+var settings: dict<react.Property> = {}
+
+for opt in keys(kUserSettings)
+  settings[opt] = react.Property.new(get(g:, $'stylepicker_{opt}', kUserSettings[opt]))
+endfor
+
+# Derived settings
+var sDigits        = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidigitchars.Get()    : settings.digitchars.Get())
+var sDragSymbol    = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidragsymbol.Get()    : settings.dragsymbol.Get())
+var sLeftSymbol    = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciileftsymbol.Get()    : settings.leftsymbol.Get())
+var sMarker        = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciimarker.Get()        : settings.marker.Get())
+var sRightSymbol   = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciirightsymbol.Get()   : settings.rightsymbol.Get())
+var sSliderSymbols = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciislidersymbols.Get() : settings.slidersymbols.Get())
+var sStar          = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciistar.Get()          : settings.star.Get())
+var sGutterWidth   = react.ComputedProperty.new(() => strcharlen(sMarker.Get()))
+var sGutter        = react.ComputedProperty.new(() => repeat(' ', sGutterWidth.Get()))
+var sPopupWidth    = react.ComputedProperty.new(() => max([39 + strdisplaywidth(sMarker.Get()), 42]))
+
+export def Set(option: string, value: any)
+  if type(settings[option].Get()) == v:t_bool
+    settings[option].Set(<bool>value)
+  else
+    settings[option].Set(value)
+  endif
+enddef
+
+export def Settings(values: dict<any> = {}): dict<react.Property>
+  react.Transaction(() => {
+    for option in keys(values)
+      Set(option, values[option])
+    endfor
+  })
+  return settings
+enddef
+
+def Getter(name: string): func(): any
+  return settings[name].Get
+enddef
+
+class Config
+  static var AllowKeyMapping = Getter('allowkeymapping')
+  static var Ascii           = Getter('ascii')
+  static var BorderChars     = Getter('borderchars')
+  static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
+  static var Debug           = Getter('debug')
+  static var Digits          = sDigits.Get
+  static var DragSymbol      = sDragSymbol.Get
+  static var FavoritePath    = Getter('favoritepath')
+  static var Gutter          = sGutter.Get
+  static var GutterWidth     = sGutterWidth.Get
+  static var Highlight       = Getter('highlight')
+  static var KeyAliases      = Getter('keyaliases')
+  static var LeftSymbol      = sLeftSymbol.Get
+  static var Marker          = sMarker.Get
+  static var MinWidth        = Getter('minwidth')
+  static var NumRecent       = Getter('numrecent')
+  static var PopupWidth      = sPopupWidth.Get
+  static var RandomQuotation = () => settings.quotes.Get()[rand() % len(settings.quotes.Get())]
+  static var RecentPath      = Getter('recentpath')
+  static var RightSymbol     = sRightSymbol.Get
+  static var SliderSymbols   = sSliderSymbols.Get
+  static var Star            = sStar.Get
+  static var StepDelay       = Getter('stepdelay')
+  static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
+  static var ZIndex          = Getter('zindex')
+endclass
 # }}}
 # Internal State {{{
 var sHiGroup:  react.Property                             # Reference to the current highlight group for autocommands
@@ -158,33 +223,6 @@ var sY:           number      = 0                         # Vertical position of
 var sRedrawCount: number      = 0                         # Number of times the popup has been redrawn
 var sRecent:      react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
 var sFavorite:    react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
-
-class Config
-  static var AllowKeyMapping = () => allowkeymapping
-  static var Ascii           = () => ascii
-  static var BorderChars     = () => borderchars
-  static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
-  static var Debug           = () => debug
-  static var Digits          = () => digitchars
-  static var DragSymbol      = () => dragsymbol
-  static var FavoritePath    = () => favoritepath
-  static var Gutter          = () => repeat(' ', strcharlen(marker))
-  static var GutterWidth     = () => strcharlen(marker)
-  static var Highlight       = () => highlight
-  static var KeyAliases      = () => keyaliases
-  static var LeftTriangle    = () => lefttriangle
-  static var Marker          = () => marker
-  static var NumRecent       = () => num_recent
-  static var PopupWidth      = () => max([39 + strdisplaywidth(marker), 42])
-  static var RandomQuotation = () => quotes[rand() % len(quotes)]
-  static var RecentPath      = () => recentpath
-  static var RightTriangle   = () => righttriangle
-  static var SliderSymbols   = () => ascii ? kAsciiSliderSymbols : kSliderSymbols
-  static var Star            = () => star
-  static var StepDelay       = () => stepdelay
-  static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
-  static var ZIndex          = () => zindex
-endclass
 # }}}
 # Helper Functions {{{
 def In(v: any, items: list<any>): bool
@@ -978,35 +1016,37 @@ enddef
 # }}}
 # CollapsedView {{{
 def CollapsedView(): View
-  const dragsym   = Config.DragSymbol()
-  const text      = 'StylePicker  ' .. dragsym
-  const width     = strcharlen(text)
-  const startdrag = width - strcharlen(dragsym)
+  return ReactiveView.new(() => {
+    var dragSym   = Config.DragSymbol()
+    var dragWidth = strcharlen(dragSym)
+    var text      = 'StylePicker'
+    var width     = strcharlen(text)
+    var pad       = repeat(' ', Config.MinWidth() - width - dragWidth)
+    var startDrag = width - dragWidth
 
-  return StaticView.new([
-    TextLine.new(text)
-    ->WithTitle(0, 11)
-    ->WithState(false, startdrag, width)
-  ])
+    return [TextLine.new(text .. pad .. dragSym)->WithTitle(0, 11)->WithState(false, startDrag, width)]
+  })
 enddef
 # }}}
 # HeaderView {{{
 def HeaderView(rstate: State, pane: string): View
-  const attrs     = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
-  const width     = Config.PopupWidth()
-  const offset    = width - strcharlen(attrs)
-  const styles    = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
-  const dragsym   = Config.DragSymbol()
-  const startdrag = width - strcharlen(dragsym)
+  const attrs      = 'BIUVSK' # Bold, Italic, Underline, reVerse, Standout, striKethrough
+  const attrsWidth = strcharlen(attrs)
+  const styles     = ['bold', 'italic', 'underline', 'reverse', 'standout', 'strikethrough']
 
   var headerView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
-      var hiGroup = rstate.hiGroup.Get()
-      var style   = rstate.style.Get()
-      var text    = $'BIUVSK [{rstate.fgBgSp.Get()}] {hiGroup}'
-      var pad     = repeat(' ', Config.PopupWidth() - strcharlen(text) - strcharlen(dragsym))
+      var width        = Config.PopupWidth()
+      var offset       = width - attrsWidth
+      var dragSym      = Config.DragSymbol()
+      var dragSymWidth = strcharlen(dragSym)
+      var startDrag    = width - dragSymWidth
+      var hiGroup      = rstate.hiGroup.Get()
+      var style        = rstate.style.Get()
+      var text         = $'{attrs} [{rstate.fgBgSp.Get()}] {hiGroup}'
+      var pad          = repeat(' ', Config.PopupWidth() - strcharlen(text) - dragSymWidth)
 
-      return [TextLine.new(text .. pad .. dragsym)
+      return [TextLine.new(text .. pad .. dragSym)
         ->WithState(style.bold,          0, 1)
         ->WithState(style.italic,        1, 2)
         ->WithState(style.underline,     2, 3)
@@ -1014,7 +1054,7 @@ def HeaderView(rstate: State, pane: string): View
         ->WithState(style.standout,      4, 5)
         ->WithState(style.strikethrough, 5, 6)
         ->WithTitle(7, 12 + strcharlen(hiGroup))
-        ->WithState(false, startdrag, width),
+        ->WithState(false, startDrag, width),
         BlankLine(),
       ]
     endif
@@ -1039,21 +1079,6 @@ enddef
 # }}}
 # FooterView {{{
 def FooterView(rstate: State): View
-  const ll     = Config.LeftTriangle()
-  const llen   = strcharlen(ll)
-  const rr     = Config.RightTriangle()
-  const rlen   = strcharlen(rr)
-  const text   = Center($'{ll} Rgb Hsb Gray ?Help {rr}', Config.PopupWidth())
-  const lpos   = stridx(text, ll) # This is in bytes, but it's fine because there are only spaces before ll
-  const offset = lpos + strcharlen(llen) + 1
-  const offsets = {
-    leftArrow:      [lpos,             lpos + llen],
-    rightArrow:     [lpos + llen + 20, lpos + llen + 20 + rlen],
-    [kRgbPaneKey]:  [offset,           offset +  3],
-    [kHsbPaneKey]:  [offset +  4,      offset +  7],
-    [kGrayPaneKey]: [offset +  8,      offset + 12],
-    [kHelpKey]:     [offset + 13,      offset + 18],
-  }
   const nextPane = {
     [kRgbPaneKey]:  kHsbPaneKey,
     [kHsbPaneKey]:  kGrayPaneKey,
@@ -1066,6 +1091,9 @@ def FooterView(rstate: State): View
     [kGrayPaneKey]: kHsbPaneKey,
     [kHelpKey]:     kGrayPaneKey,
   }
+  var offsets: dict<list<number>>
+  var tpanes = ' Rgb Hsb Gray ?Help '
+  var tlen = strcharlen(tpanes)
 
   var footerView = ReactiveView.new(() => {
     var pane = rstate.pane.Get()
@@ -1074,15 +1102,31 @@ def FooterView(rstate: State): View
       return []
     endif
 
+    var ll     = Config.LeftSymbol()
+    var llen   = strcharlen(ll)
+    var rr     = Config.RightSymbol()
+    var rlen   = strcharlen(rr)
+    var text   = Center($'{ll}{tpanes}{rr}', Config.PopupWidth())
+    var lpos   = strcharlen(matchstr(text, '^\s*'))
+    var offset = lpos + strcharlen(llen) # Start of tpanes
+
+    offsets = {
+      leftArrow:      [lpos,             lpos + llen],
+      rightArrow:     [lpos + llen + tlen, lpos + llen + tlen + rlen],
+      [kRgbPaneKey]:  [offset +  1,      offset +  4], # Rgb
+      [kHsbPaneKey]:  [offset +  5,      offset +  8], # Hsb
+      [kGrayPaneKey]: [offset +  9,      offset + 13], # Gray
+      [kHelpKey]:     [offset + 14,      offset + 19]} # ?Help
+
     var selectedStart = offsets[pane][0]
     var selectedEnd   = offsets[pane][1]
 
     var footer = TextLine.new(text)
-    ->Labeled(offset,      offset + 1)  # R[gb]
-    ->Labeled(offset + 4,  offset + 5)  # H[sb]
-    ->Labeled(offset + 8,  offset + 9)  # G[ray]
-    ->Labeled(offset + 13, offset + 14) # H[elp
-    ->WithTitle(selectedStart, selectedEnd)
+      ->Labeled(offset + 1,  offset + 2)  # R[gb]
+      ->Labeled(offset + 5,  offset + 6)  # H[sb]
+      ->Labeled(offset + 9,  offset + 10) # G[ray]
+      ->Labeled(offset + 14, offset + 15) # H[elp
+      ->WithTitle(selectedStart, selectedEnd)
 
     return [BlankLine(), footer]
   })
@@ -1114,8 +1158,10 @@ def SectionTitleView(title: string, opts: dict<any> = {}): View
   #  # A static line with a Label highlight.
   # #
   ##
-  var text = opts->get('center', false) ? Center(title, Config.PopupWidth()) : title
-  return StaticView.new([TextLine.new(text)->Labeled()])
+  return ReactiveView.new(() => {
+    var text = opts->get('center', false) ? Center(title, Config.PopupWidth()) : title
+    return [TextLine.new(text)->Labeled()]
+  })
 enddef
 # }}}
 # GrayscaleSectionView {{{
@@ -1124,18 +1170,20 @@ def GrayscaleSectionView(): View
   #  #
   # # A static line with grayscale markers.
   ##
-  const gutterWidth = Config.GutterWidth()
-  const width       = Config.PopupWidth()
+  return ReactiveView.new(() => {
+    var gutterWidth = Config.GutterWidth()
+    var width       = Config.PopupWidth()
 
-  return StaticView.new([
-    TextLine.new('Grayscale')->Labeled(),
-    BlankLine(width)
-    ->WithStyle(kPropTypeGray000, gutterWidth +  5, gutterWidth + 7)
-    ->WithStyle(kPropTypeGray025, gutterWidth + 13, gutterWidth + 15)
-    ->WithStyle(kPropTypeGray050, gutterWidth + 21, gutterWidth + 23)
-    ->WithStyle(kPropTypeGray075, gutterWidth + 29, gutterWidth + 31)
-    ->WithStyle(kPropTypeGray100, gutterWidth + 37, gutterWidth + 39),
-  ])
+    return [
+      TextLine.new('Grayscale')->Labeled(),
+      BlankLine(width)
+      ->WithStyle(kPropTypeGray000, gutterWidth +  5, gutterWidth + 7)
+      ->WithStyle(kPropTypeGray025, gutterWidth + 13, gutterWidth + 15)
+      ->WithStyle(kPropTypeGray050, gutterWidth + 21, gutterWidth + 23)
+      ->WithStyle(kPropTypeGray075, gutterWidth + 29, gutterWidth + 31)
+      ->WithStyle(kPropTypeGray100, gutterWidth + 37, gutterWidth + 39),
+    ]
+  })
 enddef
 # }}}
 # StepView {{{
@@ -1158,17 +1206,17 @@ def SliderView(
     rstate:      State,
     name:        string,         # The name of the slider (appears next to the slider)
     sliderValue: react.Property, # Observed value
-    Set:         func(number),   # Used for updating when the slider's value changes
+    SetValue:    func(number),   # Used for updating when the slider's value changes
     max:         number = 255,   # Maximum value of the slider
     min:         number = 0,     # Minimum value of the slider
     ): View
-  const gutterWidth = Config.GutterWidth()
-  const width       = Config.PopupWidth() - gutterWidth - 6
-  const symbols     = Config.SliderSymbols()
-  const range       = max + 1.0 - min
-  const gutter      = react.Property.new(Config.Gutter())
+    var range  = max + 1.0 - min
+    var gutter = react.Property.new(Config.Gutter())
 
   var sliderView = ReactiveView.new(() => {
+    var gutterWidth = Config.GutterWidth()
+    var width       = Config.PopupWidth() - gutterWidth - 6
+    var symbols     = Config.SliderSymbols()
     var value       = sliderValue.Get()
     var valuewidth  = value * width / range
     var whole       = float2nr(valuewidth)
@@ -1196,7 +1244,7 @@ def SliderView(
       newValue = max
     endif
 
-    Set(newValue)
+    SetValue(newValue)
   })
 
   sliderView.OnKeyPress(kDecrementKey, () => {
@@ -1206,11 +1254,13 @@ def SliderView(
       newValue = min
     endif
 
-    Set(newValue)
+    SetValue(newValue)
   })
 
   sliderView.OnMouseEvent(kLeftClickKey, (_, col) => {
-    var pos = col - gutterWidth - 9
+    var gutterWidth = Config.GutterWidth()
+    var width       = Config.PopupWidth() - gutterWidth - 6
+    var pos         = col - gutterWidth - 9
 
     if pos < 0 || pos >= width
       return
@@ -1218,11 +1268,13 @@ def SliderView(
 
     var value = max * pos / (width - 1)
 
-    Set(value)
+    SetValue(value)
   })
 
   sliderView.OnMouseEvent(kLeftDragKey, (_, col) => {
-    var pos = col - gutterWidth - 9
+    var gutterWidth = Config.GutterWidth()
+    var width       = Config.PopupWidth() - gutterWidth - 6
+    var pos         = col - gutterWidth - 9
 
     if pos < 0 || pos >= width
       return
@@ -1230,7 +1282,7 @@ def SliderView(
 
     var value = max * pos / (width - 1)
 
-    Set(value)
+    SetValue(value)
   })
 
   return sliderView
@@ -1338,9 +1390,9 @@ enddef
 # }}}
 # QuotationView {{{
 def QuotationView(): View
-  return StaticView.new([
-    TextLine.new(Center(Config.RandomQuotation(), Config.PopupWidth()))->WithCurrentHighlight(),
-  ])
+  return ReactiveView.new(() => {
+    return [TextLine.new(Center(Config.RandomQuotation(), Config.PopupWidth()))->WithCurrentHighlight()]
+  })
 enddef
 # }}}
 # ColorSliceView {{{
@@ -1360,13 +1412,14 @@ def ColorSliceView(
   ##    0   1   2   3   4   5   6   7   8   9
   ##   ███ ███ ███ ███ ███ ███ ███ ███ ███ ███
 
-  const gutterWidth = Config.GutterWidth()
-  const width       = Config.PopupWidth() - gutterWidth
-  const gutter      = react.Property.new(Config.Gutter())
-  const digits      = Config.Digits()
+  var gutter = react.Property.new(Config.Gutter())
 
   var sliceView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
+      var gutterWidth = Config.GutterWidth()
+      var width       = Config.PopupWidth() - gutterWidth
+      var digits      = Config.Digits()
+
       var palette: list<string> = colorSet.Get()
 
       if from >= len(palette)
@@ -1457,7 +1510,7 @@ def ColorSliceView(
   })
 
   sliceView.OnMouseEvent(kLeftClickKey, (_, col) => {
-    var pos = col - gutterWidth - 3
+    var pos = col - Config.GutterWidth() - 3
 
     if pos < 0 || pos % 4 == 3 # Space between color swaths
       return
@@ -1616,79 +1669,79 @@ enddef
 # }}}
 # HelpView {{{
 def HelpView(rstate: State): View
-  var s = {
-    [00]: KeySymbol(kUpKey),
-    [01]: KeySymbol(kDownKey),
-    [02]: KeySymbol(kTopKey),
-    [03]: KeySymbol(kBotKey),
-    [04]: KeySymbol(kFgBgSpKey),
-    [05]: KeySymbol(kSpBgFgKey),
-    [06]: KeySymbol(kToggleTrackingKey),
-    [07]: KeySymbol(kRgbPaneKey),
-    [08]: KeySymbol(kHsbPaneKey),
-    [09]: KeySymbol(kGrayPaneKey),
-    [10]: KeySymbol(kCloseKey),
-    [11]: KeySymbol(kCancelKey),
-    [12]: KeySymbol(kHelpKey),
-    [13]: KeySymbol(kCollapsedPaneKey),
-    [14]: KeySymbol(kToggleBoldKey),
-    [15]: KeySymbol(kToggleItalicKey),
-    [16]: KeySymbol(kToggleReverseKey),
-    [17]: KeySymbol(kToggleStandoutKey),
-    [18]: KeySymbol(kToggleStrikeThruKey),
-    [19]: KeySymbol(kToggleUnderlineKey),
-    [20]: KeySymbol(kToggleUndercurlKey),
-    [21]: KeySymbol(kToggleUnderdashedKey),
-    [22]: KeySymbol(kToggleUnderdottedKey),
-    [23]: KeySymbol(kToggleUnderdoubleKey),
-    [24]: KeySymbol(kIncrementKey),
-    [25]: KeySymbol(kDecrementKey),
-    [26]: KeySymbol(kYankKey),
-    [27]: KeySymbol(kPasteKey),
-    [28]: KeySymbol(kSetColorKey),
-    [29]: KeySymbol(kSetHiGroupKey),
-    [30]: KeySymbol(kClearKey),
-    [31]: KeySymbol(kAddToFavoritesKey),
-    [32]: KeySymbol(kYankKey),
-    [33]: KeySymbol(kRemoveKey),
-    [34]: KeySymbol(kChooseKey),
-  }
-  var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
+  var helpView = ReactiveView.new(() => {
+    var s = {
+      [00]: KeySymbol(kUpKey),
+      [01]: KeySymbol(kDownKey),
+      [02]: KeySymbol(kTopKey),
+      [03]: KeySymbol(kBotKey),
+      [04]: KeySymbol(kFgBgSpKey),
+      [05]: KeySymbol(kSpBgFgKey),
+      [06]: KeySymbol(kToggleTrackingKey),
+      [07]: KeySymbol(kRgbPaneKey),
+      [08]: KeySymbol(kHsbPaneKey),
+      [09]: KeySymbol(kGrayPaneKey),
+      [10]: KeySymbol(kCloseKey),
+      [11]: KeySymbol(kCancelKey),
+      [12]: KeySymbol(kHelpKey),
+      [13]: KeySymbol(kCollapsedPaneKey),
+      [14]: KeySymbol(kToggleBoldKey),
+      [15]: KeySymbol(kToggleItalicKey),
+      [16]: KeySymbol(kToggleReverseKey),
+      [17]: KeySymbol(kToggleStandoutKey),
+      [18]: KeySymbol(kToggleStrikeThruKey),
+      [19]: KeySymbol(kToggleUnderlineKey),
+      [20]: KeySymbol(kToggleUndercurlKey),
+      [21]: KeySymbol(kToggleUnderdashedKey),
+      [22]: KeySymbol(kToggleUnderdottedKey),
+      [23]: KeySymbol(kToggleUnderdoubleKey),
+      [24]: KeySymbol(kIncrementKey),
+      [25]: KeySymbol(kDecrementKey),
+      [26]: KeySymbol(kYankKey),
+      [27]: KeySymbol(kPasteKey),
+      [28]: KeySymbol(kSetColorKey),
+      [29]: KeySymbol(kSetHiGroupKey),
+      [30]: KeySymbol(kClearKey),
+      [31]: KeySymbol(kAddToFavoritesKey),
+      [32]: KeySymbol(kYankKey),
+      [33]: KeySymbol(kRemoveKey),
+      [34]: KeySymbol(kChooseKey)}
 
-  # Pad with spaces, so all symbol strings have the same width
-  map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
+    var maxSymbolWidth = max(mapnew(s, (_, v) => strdisplaywidth(v)))
 
-  var helpView = StaticView.new([
-    TextLine.new('Keyboard Controls')->WithTitle(),
-    BlankLine(),
-    TextLine.new('Popup')->Labeled(),
-    TextLine.new($'{s[00]} Move up           {s[07]} RGB Pane'),
-    TextLine.new($'{s[01]} Move down         {s[08]} HSB Pane'),
-    TextLine.new($'{s[02]} Go to top         {s[09]} Grayscale Pane'),
-    TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
-    TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
-    TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
-    TextLine.new($'{s[06]} Toggle tracking   {s[13]} Toggle Collapse'),
-    BlankLine(),
-    TextLine.new('Attributes')->Labeled(),
-    TextLine.new($'{s[14]} Toggle boldface   {s[19]} Toggle underline'),
-    TextLine.new($'{s[15]} Toggle italics    {s[20]} Toggle undercurl'),
-    TextLine.new($'{s[16]} Toggle reverse    {s[21]} Toggle underdashed'),
-    TextLine.new($'{s[17]} Toggle standout   {s[22]} Toggle underdotted'),
-    TextLine.new($'{s[18]} Toggle strikethru {s[23]} Toggle underdouble'),
-    BlankLine(),
-    TextLine.new('Color')->Labeled(),
-    TextLine.new($'{s[24]} Increment value   {s[28]} Set value'),
-    TextLine.new($'{s[25]} Decrement value   {s[29]} Set hi group'),
-    TextLine.new($'{s[26]} Yank color        {s[30]} Clear color'),
-    TextLine.new($'{s[27]} Paste color       {s[31]} Add to favorites'),
-    BlankLine(),
-    TextLine.new('Recent & Favorites')->Labeled(),
-    TextLine.new($'{s[32]} Yank color        {s[34]} Pick color'),
-    TextLine.new($'{s[33]} Delete color'),
-  ], true)
-  helpView.focused.Set(true)
+    # Pad with spaces, so all symbol strings have the same width
+    map(s, (_, v) => v .. repeat(' ', maxSymbolWidth - strdisplaywidth(v)))
 
+    return [
+      TextLine.new('Keyboard Controls')->WithTitle(),
+      BlankLine(),
+      TextLine.new('Popup')->Labeled(),
+      TextLine.new($'{s[00]} Move up           {s[07]} RGB Pane'),
+      TextLine.new($'{s[01]} Move down         {s[08]} HSB Pane'),
+      TextLine.new($'{s[02]} Go to top         {s[09]} Grayscale Pane'),
+      TextLine.new($'{s[03]} Go to bottom      {s[10]} Close'),
+      TextLine.new($'{s[04]} fg->bg->sp        {s[11]} Close and reset'),
+      TextLine.new($'{s[05]} sp->bg->fg        {s[12]} Help pane'),
+      TextLine.new($'{s[06]} Toggle tracking   {s[13]} Toggle Collapse'),
+      BlankLine(),
+      TextLine.new('Attributes')->Labeled(),
+      TextLine.new($'{s[14]} Toggle boldface   {s[19]} Toggle underline'),
+      TextLine.new($'{s[15]} Toggle italics    {s[20]} Toggle undercurl'),
+      TextLine.new($'{s[16]} Toggle reverse    {s[21]} Toggle underdashed'),
+      TextLine.new($'{s[17]} Toggle standout   {s[22]} Toggle underdotted'),
+      TextLine.new($'{s[18]} Toggle strikethru {s[23]} Toggle underdouble'),
+      BlankLine(),
+      TextLine.new('Color')->Labeled(),
+      TextLine.new($'{s[24]} Increment value   {s[28]} Set value'),
+      TextLine.new($'{s[25]} Decrement value   {s[29]} Set hi group'),
+      TextLine.new($'{s[26]} Yank color        {s[30]} Clear color'),
+      TextLine.new($'{s[27]} Paste color       {s[31]} Add to favorites'),
+      BlankLine(),
+      TextLine.new('Recent & Favorites')->Labeled(),
+      TextLine.new($'{s[32]} Yank color        {s[34]} Pick color'),
+      TextLine.new($'{s[33]} Delete color'),
+    ]
+  })
   var helpVStack = VStack.new([helpView, FooterView(rstate)])
 
   return helpVStack
@@ -1867,7 +1920,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
     highlight:   empty(Config.Highlight()) ? 'stylePickerHighlight' : Config.Highlight(),
     line:        yPos,
     mapping:     Config.AllowKeyMapping(),
-    minwidth:    15,
+    minwidth:    Config.MinWidth(),
     padding:     [0, 1, 0, 1],
     pos:         'topleft',
     resize:      false,
