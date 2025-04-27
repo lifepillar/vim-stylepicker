@@ -168,6 +168,11 @@ var sGutter        = react.ComputedProperty.new(() => repeat(' ', sGutterWidth.G
 var sPopupWidth    = react.ComputedProperty.new(() => max([39 + strdisplaywidth(sMarker.Get()), 42]))
 
 export def Set(option: string, value: any)
+  if !settings->has_key(option)
+    Error($"'{option}' is not a valid option.")
+    return
+  endif
+
   if type(settings[option].Get()) == v:t_bool
     settings[option].Set(<bool>value)
   else
