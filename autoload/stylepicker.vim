@@ -10,6 +10,7 @@ vim9script
 #   one character.
 # - Allow D, Y, (Enter?) without prompt?
 # - Gradient-based pane (to choose shades between two colors)
+# - Allow autocompleting highlight group names
 
 # Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
