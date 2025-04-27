@@ -1797,6 +1797,9 @@ class UI
     InitTextPropertyTypes(winbufnr(winid))
     this.rstate.winid = winid
 
+    # Inherit global tabstop: this matters if the marker contains a tab
+    setbufvar(winbufnr(winid), '&tabstop', &tabstop)
+
     var rgbView       = StylePickerView(kRgbPaneKey,  this.rstate, RgbSliderView)
     var hsbView       = StylePickerView(kHsbPaneKey,  this.rstate, HsbSliderView)
     var grayscaleView = StylePickerView(kGrayPaneKey, this.rstate, GrayscaleSliderView)
