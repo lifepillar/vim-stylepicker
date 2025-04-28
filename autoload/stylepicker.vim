@@ -5,8 +5,6 @@ vim9script
 # - fix issues with key aliases
 # - double-check that default tab width is used (for markers with tabs)
 # - Address dynamic change of numrecent (forbid?)
-# - fix left and right symbols breaking the footer when they are longer than
-#   one character.
 # - Allow D, Y, (Enter?) without prompt?
 # - Gradient-based pane (to choose shades between two colors)
 # - Allow autocompleting highlight group names
@@ -217,7 +215,6 @@ class Config
   static var FavoritePath       = Getter('favoritepath')
   static var Gutter             = sGutter.Get
   static var GutterWidth        = sGutterWidth.Get
-  static var GutterDisplayWidth = sGutterDisplayWidth.Get
   static var Highlight          = Getter('highlight')
   static var KeyAliases         = Getter('keyaliases')
   static var LeftSymbol         = sLeftSymbol.Get
@@ -1122,30 +1119,25 @@ def FooterView(rstate: State): View
     endif
 
     var ll     = Config.LeftSymbol()
-    var llen   = strcharlen(ll)
     var rr     = Config.RightSymbol()
-    var rlen   = strcharlen(rr)
     var text   = Center($'{ll}{tpanes}{rr}', Config.PopupWidth())
-    var lpos   = strcharlen(matchstr(text, '^\s*'))
-    var offset = lpos + strcharlen(llen) # Start of tpanes
+    var lpos   = stridx(text, ll) # In bytes, but works because before ll there are only spaces
+    var offset = lpos + strcharlen(ll) # Start of tpanes (in characters)
 
     offsets = {
-      leftArrow:      [lpos,             lpos + llen],
-      rightArrow:     [lpos + llen + tlen, lpos + llen + tlen + rlen],
-      [kRgbPaneKey]:  [offset +  1,      offset +  4], # Rgb
-      [kHsbPaneKey]:  [offset +  5,      offset +  8], # Hsb
-      [kGrayPaneKey]: [offset +  9,      offset + 13], # Gray
-      [kHelpKey]:     [offset + 14,      offset + 19]} # ?Help
-
-    var selectedStart = offsets[pane][0]
-    var selectedEnd   = offsets[pane][1]
+      leftArrow:      [lpos,          offset],
+      rightArrow:     [offset + tlen, offset + tlen + strcharlen(rr)],
+      [kRgbPaneKey]:  [offset +  1,   offset +  4], # Rgb
+      [kHsbPaneKey]:  [offset +  5,   offset +  8], # Hsb
+      [kGrayPaneKey]: [offset +  9,   offset + 13], # Gray
+      [kHelpKey]:     [offset + 14,   offset + 19]} # ?Help
 
     var footer = TextLine.new(text)
       ->Labeled(offset + 1,  offset + 2)  # R[gb]
       ->Labeled(offset + 5,  offset + 6)  # H[sb]
       ->Labeled(offset + 9,  offset + 10) # G[ray]
       ->Labeled(offset + 14, offset + 15) # H[elp
-      ->WithTitle(selectedStart, selectedEnd)
+      ->WithTitle(offsets[pane][0], offsets[pane][1])
 
     return [BlankLine(), footer]
   })
@@ -1967,9 +1959,7 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
       return
     endif
 
-    var text = $'{sRedrawCount} winid={winid} bufnr={winbufnr(winid)}'
-    text   ..= $' gutterWidth={Config.GutterWidth()}/{Config.GutterDisplayWidth()}'
-
+    var text      = $'{sRedrawCount} winid={winid} bufnr={winbufnr(winid)} gutter={Config.GutterWidth()}'
     var debugText = [BlankLine().value, TextLine.new(text).value]
 
     popup_settext(winid, ui.rootView.Get().Body() + debugText)
