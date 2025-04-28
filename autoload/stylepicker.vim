@@ -3,11 +3,7 @@ vim9script
 # TODO
 # - improve dragging of sliders
 # - fix issues with key aliases
-# - double-check that default tab width is used (for markers with tabs)
 # - Address dynamic change of numrecent (forbid?)
-# - Allow D, Y, (Enter?) without prompt?
-# - Gradient-based pane (to choose shades between two colors)
-# - Allow autocompleting highlight group names
 # - LoadPalette() inside an effect, to reload automatically
 
 # Requirements Check {{{
@@ -1034,13 +1030,12 @@ enddef
 # CollapsedView {{{
 def CollapsedView(): View
   return ReactiveView.new(() => {
-    var dragSym   = Config.DragSymbol()
-    var dragWidth = strcharlen(dragSym)
-    var pad       = repeat(' ', Config.MinWidth() - strcharlen('StylePicker') - dragWidth)
-    var text      = 'StylePicker' .. pad .. dragSym
-    var width     = strcharlen(text)
+    var dragSym = Config.DragSymbol()
+    var pad     = repeat(' ', Config.MinWidth() - strdisplaywidth('StylePicker') - strdisplaywidth(dragSym))
+    var text    = 'StylePicker' .. pad .. dragSym
+    var width   = strcharlen(text)
 
-    return [TextLine.new(text)->WithTitle(0, 11)->WithState(false, width - dragWidth, width)]
+    return [TextLine.new(text)->WithTitle(0, 11)->WithState(false, width - strcharlen(dragSym), width)]
   })
 enddef
 # }}}
@@ -1052,17 +1047,14 @@ def HeaderView(rstate: State, pane: string): View
 
   var headerView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
-      var width        = Config.PopupWidth()
-      var offset       = width - attrsWidth
-      var dragSym      = Config.DragSymbol()
-      var dragSymWidth = strcharlen(dragSym)
-      var startDrag    = width - dragSymWidth
       var hiGroup      = rstate.hiGroup.Get()
       var style        = rstate.style.Get()
+      var dragSym      = Config.DragSymbol()
       var text         = $'{attrs} [{rstate.fgBgSp.Get()}] {hiGroup}'
-      var pad          = repeat(' ', Config.PopupWidth() - strcharlen(text) - dragSymWidth)
+          text       ..= repeat(' ', Config.PopupWidth() - strdisplaywidth(text) - strdisplaywidth(dragSym))
+      var startDrag    = strcharlen(text)
 
-      return [TextLine.new(text .. pad .. dragSym)
+      return [TextLine.new(text .. dragSym)
         ->WithState(style.bold,          0, 1)
         ->WithState(style.italic,        1, 2)
         ->WithState(style.underline,     2, 3)
@@ -1070,7 +1062,7 @@ def HeaderView(rstate: State, pane: string): View
         ->WithState(style.standout,      4, 5)
         ->WithState(style.strikethrough, 5, 6)
         ->WithTitle(7, 12 + strcharlen(hiGroup))
-        ->WithState(false, startDrag, width),
+        ->WithState(false, startDrag, startDrag + strcharlen(dragSym)),
         BlankLine(),
       ]
     endif

@@ -291,15 +291,16 @@ Highlight group name to use for the stylepicker's text. See "highlight" in
 |popup_create-arguments|.
 
 						*'g:stylepicker_keyaliases'*
-Map from StylePicker's default keys to custom keys.
+Map from user defined key codes and StylePicker's default keys. Use this to
+set your own mappings for the various actions in the style picker.
 >
 	g:stylepicker_keyaliases = {}
 <
-For instance, to use |h| and |l| instead of left and arrow keys:
+For instance, to make |h| and |l| behave like left and arrow keys:
 >
 	let g:stylepicker_keyaliases {
-	  "\<left>": "h",
-	  "\<right>": "l",
+	  "h": "\<left>",
+	  "l": "\<right>",
 	}
 <
 						*'g:stylepicker_leftsymbol'*
