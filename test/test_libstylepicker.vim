@@ -17,6 +17,39 @@ def Text(body: ViewContent): list<string>
   return mapnew(body, (_, item: dict<any>): string => item.text)
 enddef
 
+def Test_StylePicker_TextLine()
+  var text = 'xy1234yx' # 8 bytes, 8 display columns
+  var tp = TextLine.new(text, [TextProperty.new('foo', 1, 5)])
+
+  assert_equal(8, len(text)) # in bytes
+  assert_equal(8, strlen(text)) # in bytes
+  assert_equal(8, strdisplaywidth(text))
+  assert_equal(8, strwidth(text))
+  assert_equal(8, strcharlen(text)) # Composing chars ignored
+  assert_equal(8, strchars(text)) # Composing chars counted separately
+
+  tp = TextLine.new(text, [TextProperty.new('foo', 1, 7)]) # From y to y
+
+  assert_equal(text, tp.value.text)
+  assert_equal(1, len(tp.value.props))
+  assert_equal({id: 1, col: 2, type: 'foo', length: 6}, tp.value.props[0])
+
+  text = 'xy😅yx' # The emoji occupies 1 char, 2 display columns and 4 bytes
+
+  assert_equal(8, len(text)) # in bytes
+  assert_equal(8, strlen(text)) # in bytes
+  assert_equal(6, strdisplaywidth(text))
+  assert_equal(6, strwidth(text))
+  assert_equal(5, strcharlen(text)) # Composing chars ignored
+  assert_equal(5, strchars(text)) # Composing chars counted separately
+
+  tp = TextLine.new(text, [TextProperty.new('foo', 1, 4)]) # From y to y
+
+  assert_equal(text, tp.value.text)
+  assert_equal(1, len(tp.value.props))
+  assert_equal({id: 1, col: 2, type: 'foo', length: 6}, tp.value.props[0])
+enddef
+
 
 def Test_StylePicker_TextLineFormat()
   var l0 = TextLine.new('hello')

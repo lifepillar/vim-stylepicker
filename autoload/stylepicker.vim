@@ -3,7 +3,6 @@ vim9script
 # TODO
 # - improve dragging of sliders
 # - fix issues with key aliases
-# - use strdisplaywidth() instead of strcharlen() (try markers with emojis!)
 # - double-check that default tab width is used (for markers with tabs)
 # - Address dynamic change of numrecent (forbid?)
 # - fix left and right symbols breaking the footer when they are longer than
@@ -11,6 +10,7 @@ vim9script
 # - Allow D, Y, (Enter?) without prompt?
 # - Gradient-based pane (to choose shades between two colors)
 # - Allow autocompleting highlight group names
+# - LoadPalette() inside an effect, to reload automatically
 
 # Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
@@ -168,16 +168,17 @@ for opt in keys(kUserSettings)
 endfor
 
 # Derived settings
-var sDigits        = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidigitchars.Get()    : settings.digitchars.Get())
-var sDragSymbol    = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidragsymbol.Get()    : settings.dragsymbol.Get())
-var sLeftSymbol    = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciileftsymbol.Get()    : settings.leftsymbol.Get())
-var sMarker        = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciimarker.Get()        : settings.marker.Get())
-var sRightSymbol   = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciirightsymbol.Get()   : settings.rightsymbol.Get())
-var sSliderSymbols = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciislidersymbols.Get() : settings.slidersymbols.Get())
-var sStar          = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciistar.Get()          : settings.star.Get())
-var sGutterWidth   = react.ComputedProperty.new(() => strcharlen(sMarker.Get()))
-var sGutter        = react.ComputedProperty.new(() => repeat(' ', sGutterWidth.Get()))
-var sPopupWidth    = react.ComputedProperty.new(() => max([39 + strdisplaywidth(sMarker.Get()), 42]))
+var sDigits             = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidigitchars.Get()    : settings.digitchars.Get())
+var sDragSymbol         = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciidragsymbol.Get()    : settings.dragsymbol.Get())
+var sLeftSymbol         = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciileftsymbol.Get()    : settings.leftsymbol.Get())
+var sMarker             = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciimarker.Get()        : settings.marker.Get())
+var sRightSymbol        = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciirightsymbol.Get()   : settings.rightsymbol.Get())
+var sSliderSymbols      = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciislidersymbols.Get() : settings.slidersymbols.Get())
+var sStar               = react.ComputedProperty.new(() => settings.ascii.Get() ? settings.asciistar.Get()          : settings.star.Get())
+var sGutterDisplayWidth = react.ComputedProperty.new(() => strdisplaywidth(sMarker.Get()))
+var sGutter             = react.ComputedProperty.new(() => repeat(' ', sGutterDisplayWidth.Get()))
+var sGutterWidth        = react.ComputedProperty.new(() => strcharlen(sGutter.Get()))
+var sPopupWidth         = react.ComputedProperty.new(() => max([39 + strdisplaywidth(sMarker.Get()), 42]))
 
 export def Set(option: string, value: any)
   if !settings->has_key(option)
@@ -206,31 +207,32 @@ def Getter(name: string): func(): any
 enddef
 
 class Config
-  static var AllowKeyMapping = Getter('allowkeymapping')
-  static var Ascii           = Getter('ascii')
-  static var BorderChars     = Getter('borderchars')
-  static var ColorMode       = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
-  static var Debug           = Getter('debug')
-  static var Digits          = sDigits.Get
-  static var DragSymbol      = sDragSymbol.Get
-  static var FavoritePath    = Getter('favoritepath')
-  static var Gutter          = sGutter.Get
-  static var GutterWidth     = sGutterWidth.Get
-  static var Highlight       = Getter('highlight')
-  static var KeyAliases      = Getter('keyaliases')
-  static var LeftSymbol      = sLeftSymbol.Get
-  static var Marker          = sMarker.Get
-  static var MinWidth        = Getter('minwidth')
-  static var NumRecent       = Getter('numrecent')
-  static var PopupWidth      = sPopupWidth.Get
-  static var RandomQuotation = () => settings.quotes.Get()[rand() % len(settings.quotes.Get())]
-  static var RecentPath      = Getter('recentpath')
-  static var RightSymbol     = sRightSymbol.Get
-  static var SliderSymbols   = sSliderSymbols.Get
-  static var Star            = sStar.Get
-  static var StepDelay       = Getter('stepdelay')
-  static var StyleMode       = () => has('gui_running') ? 'gui' : 'cterm'
-  static var ZIndex          = Getter('zindex')
+  static var AllowKeyMapping    = Getter('allowkeymapping')
+  static var Ascii              = Getter('ascii')
+  static var BorderChars        = Getter('borderchars')
+  static var ColorMode          = () => has('gui_running') || (has('termguicolors') && &termguicolors) ? 'gui' : 'cterm'
+  static var Debug              = Getter('debug')
+  static var Digits             = sDigits.Get
+  static var DragSymbol         = sDragSymbol.Get
+  static var FavoritePath       = Getter('favoritepath')
+  static var Gutter             = sGutter.Get
+  static var GutterWidth        = sGutterWidth.Get
+  static var GutterDisplayWidth = sGutterDisplayWidth.Get
+  static var Highlight          = Getter('highlight')
+  static var KeyAliases         = Getter('keyaliases')
+  static var LeftSymbol         = sLeftSymbol.Get
+  static var Marker             = sMarker.Get
+  static var MinWidth           = Getter('minwidth')
+  static var NumRecent          = Getter('numrecent')
+  static var PopupWidth         = sPopupWidth.Get
+  static var RandomQuotation    = () => settings.quotes.Get()[rand() % len(settings.quotes.Get())]
+  static var RecentPath         = Getter('recentpath')
+  static var RightSymbol        = sRightSymbol.Get
+  static var SliderSymbols      = sSliderSymbols.Get
+  static var Star               = sStar.Get
+  static var StepDelay          = Getter('stepdelay')
+  static var StyleMode          = () => has('gui_running') ? 'gui' : 'cterm'
+  static var ZIndex             = Getter('zindex')
 endclass
 # }}}
 # Internal State {{{
@@ -740,6 +742,7 @@ class State
     this.color   = ColorProperty.new(this.hiGroup, this.fgBgSp)
     this.style   = StyleProperty.new(this.hiGroup)
 
+    # TODO: put inside effect to reload if path changes
     if !empty(Config.RecentPath()) && path.IsReadable(path.Expand(Config.RecentPath()))
       sRecent.Set(LoadPalette(Config.RecentPath()))
     endif
@@ -1226,12 +1229,12 @@ def SliderView(
     max:         number = 255,   # Maximum value of the slider
     min:         number = 0,     # Minimum value of the slider
     ): View
-    var range  = max + 1.0 - min
-    var gutter = react.Property.new(Config.Gutter())
+  var range  = max + 1.0 - min
+  var gutter = react.Property.new(Config.Gutter())
 
   var sliderView = ReactiveView.new(() => {
-    var gutterWidth = Config.GutterWidth()
-    var width       = Config.PopupWidth() - gutterWidth - 6
+    var width       = Config.PopupWidth() - Config.GutterWidth() - 6
+    var gutterWidth = strcharlen(gutter.Get())
     var symbols     = Config.SliderSymbols()
     var value       = sliderValue.Get()
     var valuewidth  = value * width / range
@@ -1433,8 +1436,7 @@ def ColorSliceView(
 
   var sliceView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
-      var gutterWidth = Config.GutterWidth()
-      var width       = Config.PopupWidth() - gutterWidth
+      var width       = Config.PopupWidth() - Config.GutterWidth()
       var digits      = Config.Digits()
 
       var palette: list<string> = colorSet.Get()
@@ -1454,6 +1456,7 @@ def ColorSliceView(
 
       var colorsLine = TextLine.new(gutter.Get() .. repeat(' ', width))
       var k = 0
+      var gutterWidth = strcharlen(gutter.Get())
 
       while k < to_ - from
         var hexCol   = palette[from + k]
@@ -1964,10 +1967,10 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
       return
     endif
 
-    var debugText = [
-      BlankLine().value,
-      TextLine.new($'{sRedrawCount}  winid={winid}  bufnr={winbufnr(winid)}').value,
-    ]
+    var text = $'{sRedrawCount} winid={winid} bufnr={winbufnr(winid)}'
+    text   ..= $' gutterWidth={Config.GutterWidth()}/{Config.GutterDisplayWidth()}'
+
+    var debugText = [BlankLine().value, TextLine.new(text).value]
 
     popup_settext(winid, ui.rootView.Get().Body() + debugText)
   enddef
