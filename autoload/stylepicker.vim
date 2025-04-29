@@ -69,6 +69,7 @@ const kClearKey             = "Z"
 const kCloseKey             = "x"
 const kCollapsedPaneKey     = "_"
 const kDecrementKey         = "\<left>"
+const kDoubleClickKey       = "\<2-leftmouse>"
 const kDownKey              = "\<down>"
 const kFgBgSpKey            = "\<tab>"
 const kGrayPaneKey          = "G"
@@ -1090,6 +1091,10 @@ def HeaderView(rstate: State, pane: string): View
     endif
   })
 
+  headerView.OnMouseEvent(kDoubleClickKey, (_, _) => {
+    rstate.pane.Set(kCollapsedPaneKey)
+  })
+
   return headerView
 enddef
 # }}}
@@ -1846,12 +1851,12 @@ class UI
     var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
     if this.rstate.pane.Get() == kCollapsedPaneKey
-      if keyCode == kCollapsedPaneKey
-        this.rstate.pane.Set(this._reopenPane)
-        return true
+      if !keyCode->In([kCollapsedPaneKey, kDoubleClickKey])
+        return false
       endif
 
-      return false
+      this.rstate.pane.Set(this._reopenPane)
+      return true
     endif
 
     if keyCode == kCancelKey
@@ -1879,7 +1884,7 @@ class UI
       return true
     endif
 
-    if keyCode->In(["\<leftmouse>", "\<leftdrag>"])
+    if keyCode->In([kLeftClickKey, kLeftDragKey, kDoubleClickKey])
       var mousepos = getmousepos()
 
       if mousepos.winid != winid
