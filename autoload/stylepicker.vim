@@ -172,6 +172,13 @@ var sGutterDisplayWidth = react.ComputedProperty.new(() => strdisplaywidth(sMark
 var sGutter             = react.ComputedProperty.new(() => repeat(' ', sGutterDisplayWidth.Get()))
 var sGutterWidth        = react.ComputedProperty.new(() => strcharlen(sGutter.Get()))
 var sPopupWidth         = react.ComputedProperty.new(() => max([39 + strdisplaywidth(sMarker.Get()), 42]))
+var sReversedKeyAliases = react.ComputedProperty.new(() => {
+  var keyMap: dict<string> = {}
+  foreach(settings.keyaliases.Get(), (k, v) => {
+    keyMap[v] = k
+  })
+  return keyMap
+})
 
 export def Set(option: string, value: any)
   if !settings->has_key(option)
@@ -219,6 +226,7 @@ class Config
   static var PopupWidth         = sPopupWidth.Get
   static var RandomQuotation    = () => settings.quotes.Get()[rand() % len(settings.quotes.Get())]
   static var RecentPath         = Getter('recentpath')
+  static var ReversedKeyAliases = sReversedKeyAliases.Get
   static var RightSymbol        = sRightSymbol.Get
   static var SliderSymbols      = sSliderSymbols.Get
   static var Star               = sStar.Get
@@ -256,7 +264,7 @@ def Int(cond: bool): number
 enddef
 
 def KeySymbol(defaultKeyCode: string): string
-  var userKeyCode = get(Config.KeyAliases(), defaultKeyCode, defaultKeyCode)
+  var userKeyCode = get(Config.ReversedKeyAliases(), defaultKeyCode, defaultKeyCode)
 
   if Config.Ascii()
     return get(kASCIIKey, userKeyCode, userKeyCode)
