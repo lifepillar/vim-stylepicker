@@ -877,9 +877,9 @@ class State
       if color->NotIn(recentColors)
         recentColors->add(color)
 
-        if len(recentColors) > Config.NumRecent()
+        while len(recentColors) > Config.NumRecent()
           remove(recentColors, 0)
-        endif
+        endwhile
 
         this.recent.Set(recentColors, {force: true})
       endif
