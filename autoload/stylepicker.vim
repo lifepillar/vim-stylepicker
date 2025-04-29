@@ -2,8 +2,6 @@ vim9script
 
 # TODO
 # - improve dragging of sliders
-# - Address dynamic change of numrecent (forbid?)
-# - LoadPalette() inside an effect, to reload automatically
 
 # Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
@@ -742,14 +740,17 @@ class State
     this.color   = ColorProperty.new(this.hiGroup, this.fgBgSp)
     this.style   = StyleProperty.new(this.hiGroup)
 
-    # TODO: put inside effect to reload if path changes
-    if !empty(Config.RecentPath()) && path.IsReadable(path.Expand(Config.RecentPath()))
-      sRecent.Set(LoadPalette(Config.RecentPath()))
-    endif
+    react.CreateEffect(() => {
+      if !empty(Config.RecentPath()) && path.IsReadable(path.Expand(Config.RecentPath()))
+        sRecent.Set(LoadPalette(Config.RecentPath()))
+      endif
+    })
 
-    if !empty(Config.FavoritePath()) && path.IsReadable(path.Expand(Config.FavoritePath()))
-      sFavorite.Set(LoadPalette(Config.FavoritePath()))
-    endif
+    react.CreateEffect(() => {
+      if !empty(Config.FavoritePath()) && path.IsReadable(path.Expand(Config.FavoritePath()))
+        sFavorite.Set(LoadPalette(Config.FavoritePath()))
+      endif
+    })
 
     this.recent   = sRecent
     this.favorite = sFavorite
