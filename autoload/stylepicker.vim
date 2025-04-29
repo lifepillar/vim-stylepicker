@@ -2,7 +2,6 @@ vim9script
 
 # TODO
 # - improve dragging of sliders
-# - fix issues with key aliases
 # - Address dynamic change of numrecent (forbid?)
 # - LoadPalette() inside an effect, to reload automatically
 
@@ -67,25 +66,25 @@ const kDefaultQuotes = [
 const kAddToFavoritesKey    = "A"
 const kBotKey               = ">"
 const kCancelKey            = "X"
+const kChooseKey            = "\<enter>"
 const kClearKey             = "Z"
 const kCloseKey             = "x"
 const kCollapsedPaneKey     = "_"
 const kDecrementKey         = "\<left>"
 const kDownKey              = "\<down>"
 const kFgBgSpKey            = "\<tab>"
-const kSpBgFgKey            = "\<s-tab>"
 const kGrayPaneKey          = "G"
-const kHelpKey              = "?"
+const kHelpPaneKey          = "?"
 const kHsbPaneKey           = "H"
 const kIncrementKey         = "\<right>"
 const kLeftClickKey         = "\<leftmouse>"
 const kLeftDragKey          = "\<leftdrag>"
 const kPasteKey             = "P"
-const kChooseKey            = "\<enter>"
 const kRemoveKey            = "D"
 const kRgbPaneKey           = "R"
 const kSetColorKey          = "E"
 const kSetHiGroupKey        = "N"
+const kSpBgFgKey            = "\<s-tab>"
 const kToggleBoldKey        = "B"
 const kToggleItalicKey      = "I"
 const kToggleReverseKey     = "V"
@@ -93,8 +92,8 @@ const kToggleStandoutKey    = "S"
 const kToggleStrikeThruKey  = "K"
 const kToggleTrackingKey    = "T"
 const kToggleUndercurlKey   = "~"
-const kToggleUnderdottedKey = "."
 const kToggleUnderdashedKey = "-"
+const kToggleUnderdottedKey = "."
 const kToggleUnderdoubleKey = "="
 const kToggleUnderlineKey   = "U"
 const kTopKey               = "<"
@@ -124,7 +123,7 @@ const kASCIIKey = {
 }
 # }}}
 # Reactive User Settings {{{
-const kUserSettings: dict<any> = {
+const kDefaultUserSettings: dict<any> = {
   allowkeymapping:    true,
   ascii:              false,
   asciiborderchars:   ['-', '|', '-', '|', ':', ':', ':', ':'],
@@ -157,8 +156,8 @@ const kUserSettings: dict<any> = {
 
 var settings: dict<react.Property> = {}
 
-for opt in keys(kUserSettings)
-  settings[opt] = react.Property.new(get(g:, $'stylepicker_{opt}', kUserSettings[opt]))
+for opt in keys(kDefaultUserSettings)
+  settings[opt] = react.Property.new(get(g:, $'stylepicker_{opt}', kDefaultUserSettings[opt]))
 endfor
 
 # Derived settings
@@ -1090,14 +1089,14 @@ def FooterView(rstate: State): View
   const nextPane = {
     [kRgbPaneKey]:  kHsbPaneKey,
     [kHsbPaneKey]:  kGrayPaneKey,
-    [kGrayPaneKey]: kHelpKey,
-    [kHelpKey]:     kRgbPaneKey,
+    [kGrayPaneKey]: kHelpPaneKey,
+    [kHelpPaneKey]: kRgbPaneKey,
   }
   const prevPane = {
-    [kRgbPaneKey]:  kHelpKey,
+    [kRgbPaneKey]:  kHelpPaneKey,
     [kHsbPaneKey]:  kRgbPaneKey,
     [kGrayPaneKey]: kHsbPaneKey,
-    [kHelpKey]:     kGrayPaneKey,
+    [kHelpPaneKey]: kGrayPaneKey,
   }
   var offsets: dict<list<number>>
   var tpanes = ' Rgb Hsb Gray ?Help '
@@ -1122,7 +1121,7 @@ def FooterView(rstate: State): View
       [kRgbPaneKey]:  [offset +  1,   offset +  4], # Rgb
       [kHsbPaneKey]:  [offset +  5,   offset +  8], # Hsb
       [kGrayPaneKey]: [offset +  9,   offset + 13], # Gray
-      [kHelpKey]:     [offset + 14,   offset + 19]} # ?Help
+      [kHelpPaneKey]: [offset + 14,   offset + 19]} # ?Help
 
     var footer = TextLine.new(text)
       ->Labeled(offset + 1,  offset + 2)  # R[gb]
@@ -1147,8 +1146,8 @@ def FooterView(rstate: State): View
       rstate.pane.Set(kHsbPaneKey)
     elseif pos >= offsets[kGrayPaneKey][0] && pos < offsets[kGrayPaneKey][1]
       rstate.pane.Set(kGrayPaneKey)
-    elseif pos >= offsets[kHelpKey][0] && pos < offsets[kHelpKey][1]
-      rstate.pane.Set(kHelpKey)
+    elseif pos >= offsets[kHelpPaneKey][0] && pos < offsets[kHelpPaneKey][1]
+      rstate.pane.Set(kHelpPaneKey)
     endif
   })
 
@@ -1687,7 +1686,7 @@ def HelpView(rstate: State): View
       [09]: KeySymbol(kGrayPaneKey),
       [10]: KeySymbol(kCloseKey),
       [11]: KeySymbol(kCancelKey),
-      [12]: KeySymbol(kHelpKey),
+      [12]: KeySymbol(kHelpPaneKey),
       [13]: KeySymbol(kCollapsedPaneKey),
       [14]: KeySymbol(kToggleBoldKey),
       [15]: KeySymbol(kToggleItalicKey),
@@ -1856,7 +1855,7 @@ class UI
       return true
     endif
 
-    if keyCode->In([kHelpKey, kRgbPaneKey, kHsbPaneKey, kCollapsedPaneKey, kGrayPaneKey])
+    if keyCode->In([kHelpPaneKey, kRgbPaneKey, kHsbPaneKey, kCollapsedPaneKey, kGrayPaneKey])
       if keyCode == kCollapsedPaneKey
         this._reopenPane = this.rstate.pane.Get()
       endif
