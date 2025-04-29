@@ -1831,6 +1831,10 @@ class UI
   enddef
 
   def HandleEvent(winid: number, rawKeyCode: string): bool
+    if rawKeyCode->In(values(Config.KeyAliases())) # Key code is remapped
+      return false
+    endif
+
     var keyCode = get(Config.KeyAliases(), rawKeyCode, rawKeyCode)
 
     if this.rstate.pane.Get() == kCollapsedPaneKey
