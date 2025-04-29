@@ -1,8 +1,5 @@
 vim9script
 
-# TODO
-# - improve dragging of sliders
-
 # Requirements Check {{{
 if !has('popupwin') || !has('textprop') || v:version < 901
   echomsg 'Stylepicker requires Vim 9.1 compiled with popupwin and textprop.'
@@ -78,6 +75,7 @@ const kHsbPaneKey           = "H"
 const kIncrementKey         = "\<right>"
 const kLeftClickKey         = "\<leftmouse>"
 const kLeftDragKey          = "\<leftdrag>"
+const kLeftReleaseKey       = "\<leftrelease>"
 const kPasteKey             = "P"
 const kRemoveKey            = "D"
 const kRgbPaneKey           = "R"
@@ -235,12 +233,13 @@ class Config
 endclass
 # }}}
 # Internal State {{{
-var sHiGroup:  react.Property                             # Reference to the current highlight group for autocommands
-var sX:           number      = 0                         # Horizontal position of the style picker
-var sY:           number      = 0                         # Vertical position of the style picker
-var sRedrawCount: number      = 0                         # Number of times the popup has been redrawn
-var sRecent:      react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
-var sFavorite:    react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
+var sHiGroup:        react.Property                          # Reference to the current highlight group for autocommands
+var sX:              number         = 0                      # Horizontal position of the style picker
+var sY:              number         = 0                      # Vertical position of the style picker
+var sLastClickedRow: number         = 0                      # Window row where the mouse is currently left pressed
+var sRedrawCount:    number         = 0                      # Number of times the popup has been redrawn
+var sRecent:         react.Property = react.Property.new([]) # Cached recent colors to persist across close/reopen
+var sFavorite:       react.Property = react.Property.new([]) # Cached favorite colors to persist across close/reopen
 # }}}
 # Helper Functions {{{
 def In(v: any, items: list<any>): bool
@@ -1226,8 +1225,8 @@ def SliderView(
     max:         number = 255,   # Maximum value of the slider
     min:         number = 0,     # Minimum value of the slider
     ): View
-  var range  = max + 1.0 - min
-  var gutter = react.Property.new(Config.Gutter())
+  var range           = max + 1.0 - min
+  var gutter          = react.Property.new(Config.Gutter())
 
   var sliderView = ReactiveView.new(() => {
     var width       = Config.PopupWidth() - Config.GutterWidth() - 6
@@ -1282,17 +1281,23 @@ def SliderView(
       return
     endif
 
+    sLastClickedRow = getmousepos().winrow
+
     var value = max * pos / (width - 1)
 
     SetValue(value)
   })
 
-  sliderView.OnMouseEvent(kLeftDragKey, (_, col) => {
+  sliderView.OnMouseEvent(kLeftDragKey, (lnum, col) => {
     var gutterWidth = Config.GutterWidth()
     var width       = Config.PopupWidth() - gutterWidth - 6
     var pos         = col - gutterWidth - 9
 
     if pos < 0 || pos >= width
+      return
+    endif
+
+    if getmousepos().winrow != sLastClickedRow
       return
     endif
 
@@ -1681,6 +1686,10 @@ def StylePickerView(pane: string, rstate: State, MakeSlidersView: func(State): V
     Notification(rstate.winid, 'Color cleared')
   })
 
+  stylePickerView.OnMouseEvent(kLeftReleaseKey, (_, _) => {
+    sLastClickedRow = 0
+  })
+
   return stylePickerView
 enddef
 # }}}
@@ -1884,7 +1893,7 @@ class UI
       return true
     endif
 
-    if keyCode->In([kLeftClickKey, kLeftDragKey, kDoubleClickKey])
+    if keyCode->In([kLeftClickKey, kLeftDragKey, kDoubleClickKey, kLeftReleaseKey])
       var mousepos = getmousepos()
 
       if mousepos.winid != winid
