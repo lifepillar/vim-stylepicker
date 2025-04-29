@@ -1216,7 +1216,6 @@ def StepView(rstate: State, pane: string): View
 enddef
 # }}}
 # SliderView {{{
-# NOTE: for a slider to be rendered correctly, ambiwidth must be set to 'single'.
 def SliderView(
     rstate:      State,
     name:        string,         # The name of the slider (appears next to the slider)
@@ -1918,7 +1917,6 @@ endclass
 def Cancel(winid: number)
   popup_close(winid)
 
-  # TODO: revert only the changes of the stylepicker
   if exists('g:colors_name') && !empty('g:colors_name')
     execute 'colorscheme' g:colors_name
   endif
