@@ -233,6 +233,8 @@ class Config
 endclass
 # }}}
 # Internal State {{{
+# Reference to the name of the current color scheme for autocommands
+var sColorscheme:    react.Property = react.Property.new(exists('g:colors_name') ? g:colors_name : '')
 var sHiGroup:        react.Property                          # Reference to the current highlight group for autocommands
 var sX:              number         = 0                      # Horizontal position of the style picker
 var sY:              number         = 0                      # Vertical position of the style picker
@@ -704,7 +706,7 @@ class State
   #  # The reactive state of this script.
   # #
   ##
-  var hiGroup:  react.Property # The current highlight group
+  var hiGroup:  react.Property # The name of the current highlight group
   var fgBgSp:   react.Property # The current color attribute ('fg', 'bg', or 'sp')
   var recent:   react.Property # List of recent colors
   var favorite: react.Property # List of favorite colors
@@ -728,7 +730,7 @@ class State
   var hue         = react.Property.new(-1)
   var saturation  = react.Property.new(-1)
   var brightness  = react.Property.new(-1)
-  var redrawCount = react.Property.new(0) # Count how many times the popup is redrawn
+  var colorscheme = react.Property.new(exists('g:colors_name') ? g:colors_name : '')
 
   public var winid    = 0  # StylePicker window ID
 
@@ -754,7 +756,8 @@ class State
 
     this.recent   = sRecent
     this.favorite = sFavorite
-    sHiGroup      = this.hiGroup # Allows setting the highlight group from an autocommand
+    sHiGroup      = this.hiGroup     # Allows setting the highlight group from an autocommand
+    sColorscheme  = this.colorscheme # Ditto
 
     react.CreateEffect(() => { # Recompute value when this.color or this.cachedHsb changes
       var color = this.color.Get()
@@ -999,7 +1002,7 @@ enddef
 # Autocommands {{{
 def ColorschemeChangedAutoCmd()
   augroup StylePicker
-    autocmd ColorScheme * InitHighlight()
+    autocmd ColorScheme * sColorscheme.Set(exists('g:colors_name') ? g:colors_name : '')
   augroup END
 enddef
 
@@ -1059,7 +1062,7 @@ def HeaderView(rstate: State, pane: string): View
       var style        = rstate.style.Get()
       var dragSym      = Config.DragSymbol()
       var text         = $'{attrs} [{rstate.fgBgSp.Get()}] {hiGroup}'
-          text       ..= repeat(' ', Config.PopupWidth() - strdisplaywidth(text) - strdisplaywidth(dragSym))
+      text           ..= repeat(' ', Config.PopupWidth() - strdisplaywidth(text) - strdisplaywidth(dragSym))
       var startDrag    = strcharlen(text)
 
       return [TextLine.new(text .. dragSym)
@@ -1381,6 +1384,7 @@ def ColorInfoView(rstate: State, pane: string): View
         repeat(Config.Star(), termScore)
       )
 
+      rstate.colorscheme.Get()
       execute $'hi stylePickerGuiColor guifg={contrast} guibg={color} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
       execute $'hi stylePickerTermColor guifg={contrast} guibg={approxCol.hex} ctermfg={contrastAlt.xterm} ctermbg={approxCol.xterm}'
 
@@ -1437,8 +1441,8 @@ def ColorSliceView(
 
   var sliceView = ReactiveView.new(() => {
     if rstate.pane.Get() == pane
-      var width       = Config.PopupWidth() - Config.GutterWidth()
-      var digits      = Config.Digits()
+      var width  = Config.PopupWidth() - Config.GutterWidth()
+      var digits = Config.Digits()
 
       var palette: list<string> = colorSet.Get()
 
@@ -1467,6 +1471,7 @@ def ColorSliceView(
 
         colorsLine->WithStyle(textProp, column, column + 3)
 
+        rstate.colorscheme.Get()
         hlset([{name: textProp, guibg: hexCol, ctermbg: string(approx.xterm)}])
         prop_type_delete(textProp, {bufnr: bufnr})
         prop_type_add(textProp, {bufnr: bufnr, highlight: textProp})
@@ -1930,7 +1935,10 @@ def ClosedCallback(winid: number, result: any = '')
 enddef
 
 def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
-  InitHighlight()
+  var initHighlightEffect = react.CreateEffect(() => {
+    InitHighlight()
+  })
+  sColorscheme.Register(initHighlightEffect)
 
   var _hiGroup = empty(hiGroup) ? HiGroupUnderCursor() : hiGroup
   var  rstate  = State.new(_hiGroup, 'fg')
@@ -1966,6 +1974,8 @@ def StylePickerPopup(hiGroup: string, xPos: number, yPos: number): number
   if empty(hiGroup)
     TrackCursorAutoCmd()
   endif
+
+  ColorschemeChangedAutoCmd()
 
   def Redraw()
     ++sRedrawCount
