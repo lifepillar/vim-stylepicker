@@ -1,7 +1,10 @@
 # Vim StylePicker
 
+<img src="https://raw.github.com/lifepillar/Resources/master/stylepicker/StylePicker.jpg" width="520">
+
 StylePicker is a sophisticated color and style picker for Vim 9.1 or later. It
 allows you to interactively modify highlight groups.
+
 
 ## Installation
 
