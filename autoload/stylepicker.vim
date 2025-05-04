@@ -10,7 +10,12 @@ endif
 import 'libcolor.vim'       as libcolor
 import 'libpath.vim'        as path
 import 'libreactive.vim'    as react
+import 'libversion.vim'     as vv
 import 'libstylepicker.vim' as libui
+
+if !vv.Require('libreactive', react.version, '0.0.1-beta', {throw: false})
+  finish
+endif
 
 type ReactiveView = libui.ReactiveView
 type StaticView   = libui.StaticView
