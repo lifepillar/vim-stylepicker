@@ -248,7 +248,11 @@ Settings([{options}])
 		:echo stylepicker#Settings()
 <
 					*g:stylepicker_allowkeymapping*
-Allow for key mapping. See "mapping" in |popup_create-arguments|.
+
+Allow for key mapping. When |true|, any key arrives to the popup after any
+mapping. This may interfere with the keyboard controls of the style picker. In
+such cases, you may set this to |false| or redefine some keys with
+|g:stylepicker_keyaliases|. See also "mapping" in |popup_create-arguments|.
 >
 	g:stylepicker_allowkeymapping = true
 <
