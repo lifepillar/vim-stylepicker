@@ -269,7 +269,7 @@ Whether the style picker should be limited to ASCII.
 					*g:stylepicker_asciirightsymbol*
 					*g:stylepicker_asciislidersymbols*
 					*g:stylepicker_asciistar*
-Same as the correponding options without “ascii”, but they apply when
+Same as the corresponding options without “ascii”, but they apply when
 |g:stylepicker_ascii| is set.
 
 					*g:stylepicker_borderchars*
