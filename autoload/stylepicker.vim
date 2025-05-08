@@ -154,12 +154,12 @@ const kDefaultUserSettings: dict<any> = {
   star:               '★',
   stepdelay:          1.0,
   zindex:             50,
-}
+}->extend(get(g:, 'stylepicker_options', {}), 'force')
 
 var settings: dict<react.Property> = {}
 
 for opt in keys(kDefaultUserSettings)
-  settings[opt] = react.Property.new(get(g:, $'stylepicker_{opt}', kDefaultUserSettings[opt]))
+  settings[opt] = react.Property.new(kDefaultUserSettings[opt])
 endfor
 
 # Derived settings
