@@ -8,10 +8,10 @@ allows you to interactively modify highlight groups.
 
 ## Installation
 
-StylePicker requires [vim-devel](https://github.com/lifepillar/vim-devel).
+StylePicker is part of the [vim-devel](https://github.com/lifepillar/vim-devel)
+package. Just clone the repository:
 
     git clone https://github.com/lifepillar/vim-devel.git ~/.vim/pack/devel
-    git clone https://github.com/lifepillar/vim-stylepicker.git ~/.vim/pack/plugins/stylepicker
 
 
 ## Help
