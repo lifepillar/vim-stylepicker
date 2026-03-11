@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **As of March 11, 2026, this repository is on [Codeberg](https://codeberg.org/lifepillar/vim-stylepicker).**
+
 # Vim StylePicker
 
 <img src="https://raw.github.com/lifepillar/Resources/master/stylepicker/StylePicker.jpg" width="300">
